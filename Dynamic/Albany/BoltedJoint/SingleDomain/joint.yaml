@@ -57,7 +57,7 @@ LCM:
               Reduction Factor: 5.00000000000000000e-01
               Amplification Factor: 1.10000000000000000e+00
               Minimum Value Monitoring Function: 1.00000000000000008e-12
-              Maximum Value Monitoring Function: 1.00000000000000027e20
+              Maximum Value Monitoring Function: 1.00000000000000028e-01
           Output Time List: ''
           Output Index List: ''
       Tempus Stepper:
