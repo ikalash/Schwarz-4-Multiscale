@@ -1,0 +1,52 @@
+A: 0.00064516 # 1 inch^2
+E: 206.8e9 # 30 x 10^6 psi
+rho: 7844.065616048 # 15.22 slug/ft^3
+a0: 0.0
+a1: 0.0
+zeta_target: 0.0
+stiffness_damping_contribution: 1.0
+
+gamma: 0.5
+beta: 0.25
+
+# for agreement with Carpenter paper where nx = 20
+lambda: 1313385826.7716537 # 7.5e6 lbf/in
+
+# for closer agreement with nx = 200 case use this penalty parameter
+#lambda: 150e8 
+
+penalty_mode: 0
+
+#nx: [20, 20]
+nx: [200, 200]
+
+v0: [5.13588, -5.13588] # 202.2 in/sec
+x0_start: [-0.254254, 0.000254] # L = 10 inch with gap of .02 inch
+x1_start: [-0.000254, 0.254254]
+
+# for use where nx = 20
+#dt: 0.2226e-5
+
+# for use where nx = 200
+dt: 1.0e-7
+
+t_start: 0.0e-5
+t_end: 20.0e-5
+
+max_iterations: 10
+newmark_tolerance: 1.0e-9
+
+rel_tol_domain: 1.0e-9
+rel_tol_schwarz: 1.0e-9
+abs_tol_domain: 1.0e-12
+abs_tol_schwarz: 1.0e-12
+
+min_iter_schwarz: 1
+max_iter_schwarz: 128
+max_iter_domain: 100000
+
+step_interval: 100
+schwarz_interval: 10
+domain_interval: 1
+
+integration_schemes: [0, 0]

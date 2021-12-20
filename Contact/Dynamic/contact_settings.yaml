@@ -1,0 +1,50 @@
+A: 1.0e-6
+E: 1.0e9
+rho: 1.0e3
+a0: 0.0
+a1: 0.0
+zeta_target: 0.0
+stiffness_damping_contribution: 0.0
+
+gamma: 0.5
+beta: 0.25
+
+lambda: 75000
+penalty_mode: 0
+
+nx: [200, 200]
+v0: [100.0, -100.0]
+x0_start: [-0.27, 0.02]
+x1_start: [-0.02, 0.27]
+
+dt: 1.0e-7
+t_start: -0.2e-3
+t_end: 0.8e-3
+
+max_iterations: 10
+newmark_tolerance: 1.0e-9
+
+relaxation_factor: 1.0
+augmented_lagrange_mode: 1
+augmented_lagrange_tolerance: 1.0e-9
+max_lagrange_iterations: 25
+
+rel_tol_domain: 1.0e-9
+rel_tol_schwarz: 1.0e-9
+abs_tol_domain: 1.0e-12
+abs_tol_schwarz: 1.0e-12
+
+min_iter_schwarz: 1
+max_iter_schwarz: 128
+max_iter_domain: 100000
+
+step_interval: 100
+schwarz_interval: 10
+domain_interval: 1
+
+integration_schemes: [1, 0]
+
+# time steps for each domain
+#dt_domains: [0.666666667e-8, 1e-7]
+# global Schwarz time step
+#dt_schwarz: 2.0e-7
