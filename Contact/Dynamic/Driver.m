@@ -1,10 +1,11 @@
 clear variables;
 initial_time = -0.2e-03;
 final_time = 0.8e-03;
+time_step = 1.0e-07 ;
+implicit = 0;
+explicit = 1;
 
-small_number = 1.0e-64;
-
-output_filename = 'schwarz_method.mat';
+output_filename = 'schwarz_2bar_Newm_stand_EI1.mat';
 
 top_level_params.time_interval = [initial_time, final_time];
 % newmark-beta method parameters
@@ -13,6 +14,13 @@ top_level_params.time_interval = [initial_time, final_time];
 % ->-> Average constant acceleration is unconditionally stable
 top_level_params.gamma = 0.5;
 top_level_params.beta = 0.25;
+
+
+% Choose boundary conditons for Schwarz methood
+% DN -> Dirichlet domain left, Neumann domain right, then alternate (swap)
+% ND -> Neumann domain left, Dirichlet domain right, then alternate (swap)
+% RR -> Robin-Robin 
+top_level_params.boundary_cond = 'ND';
 
 %bar properties
 top_level_params.bar_area = 1.0e-06;
@@ -26,90 +34,84 @@ top_level_params.material_density = 1000;
 
 % These depend on the number of domains
 num_domains = 2;
+tol_zero_momentum = 1.0e-08;
 switch num_domains
 case 1
   top_level_params.num_domains = num_domains;
-  top_level_params.integration_schemes = 0;
+  top_level_params.integration_schemes = implicit;
   top_level_params.time_steps = 1e-7;
   top_level_params.num_elements_domain = 100;
   top_level_params.limits_domains = [0, 1.0];
   top_level_params.overlap_domains = [0, 0];
-  top_level_params.theta = [0, 0];
   top_level_params.initial_velocities = 0.0;
+  A = top_level_params.bar_area;
+  rho = top_level_params.material_density;
+  L = top_level_params.limits_domains(2) - top_level_params.limits_domains(1);
+  M = rho * L * A;
+  V = top_level_params.initial_velocities;
+  reference_energy = 0.5 * M * V * V;
+  reference_momentum = M * V;
+  zero_reference_momentum = abs(reference_momentum) <= tol_zero_momentum;
 case 2
   offset = 2.0e-02;
   offsets = [-1, -1; 1, 1] * offset;
   limits = [-1/4, 0; 0, 1/4];
   top_level_params.num_domains = num_domains;
-  top_level_params.integration_schemes = [1, 1];
+  top_level_params.integration_schemes = [implicit, implicit];
   top_level_params.time_steps = [1.0e-07, 1.0e-07];
-  top_level_params.num_elements_domain = [200, 200]';
+  top_level_params.num_elements_domain = [200,200]';
   top_level_params.limits_domains = limits + offsets;
   top_level_params.overlap_domains = [0, 2; 1, 0];
-  top_level_params.theta = [0, 1.0; 1.0, 0];
   top_level_params.initial_velocities = [100.0, -100.0];
+  top_level_params.alpha1 = [0, 0.5; 0.5, 0]; %for dislacement (Robin-Robin BC)
+  top_level_params.alpha2 = [0, 1.; 1., 0]; %for traction (Robin-Robin BC)
+  top_level_params.mass_damping_coefficient = 0.0;
+  top_level_params.stiffness_damping_coefficient = 0.0;                
   A = top_level_params.bar_area;
   rho = top_level_params.material_density;
-
-  L = 0.50;
-  M = rho * A * L;
-
-  % JonStart
-  % proportional damping coefficients
-  % [C] = a0 * M + a1 * K
-  % a0 -> mass proportional damping coefficient
-  % a1 -> stiffness proportional damping coefficient
-  % damping ratio zeta_i = (a0 + a1 * omega_i ^ 2) / (2 * omega_i)
-  % if a1 = 0 -> a0 =  zeta_i * 2 * omega_i
-  % if a0 = 0  -> zeta_i * 2 / omega_i
-  % omega_i -> ith natural frequency of vibration
-  top_level_params.zeta_target = 0.0;
-  top_level_params.stiffness_damping_contribution = 1;
-
-
-  top_level_params.mass_damping_contribution = 1 - top_level_params.stiffness_damping_contribution;
-
-  K = top_level_params.bar_area * top_level_params.youngs_modulus / L;
-  omega_i_est = sqrt(K / M);
-  top_level_params.mass_damping_coefficient = ...
-    top_level_params.zeta_target * 2.0 * omega_i_est * top_level_params.mass_damping_contribution;
-
-  top_level_params.stiffness_damping_coefficient = ...
-    top_level_params.zeta_target * 2.0 / omega_i_est * top_level_params.stiffness_damping_contribution;
-  % JonEnd
-
-  V = 100.0;
-  reference_energy = 0.5 * M * V * V;
-  reference_momentum = M * V;
-  zero_reference_momentum = true;
-
+  L1 = top_level_params.limits_domains(1, 2) - top_level_params.limits_domains(1, 1);
+  L2 = top_level_params.limits_domains(2, 2) - top_level_params.limits_domains(2, 1);
+  M1 = rho * A * L1;
+  M2 = rho * A * L2;
+  V1 = top_level_params.initial_velocities(1);
+  V2 = top_level_params.initial_velocities(2);
+  reference_energy = 0.5 * M1 * V1 * V1 + 0.5 * M2 * V2 * V2;
+  reference_momentum = M1 * V1 + M2 * V2;
+  zero_reference_momentum = abs(reference_momentum) <= tol_zero_momentum;
 case 3
   offset = 2.0e-02;
   offsets = [-1, -1; 0, 0; 1, 1] * offset;
   limits = [-3/8, -1/8; -1/8, 1/8; 1/8, 3/8];
   top_level_params.num_domains = num_domains;
-  top_level_params.integration_schemes = [0, 0, 0];
+  top_level_params.integration_schemes = [implicit, implicit, implicit];
   top_level_params.time_steps = [1.0e-07, 1.0e-07, 1.0e-07];
   top_level_params.num_elements_domain = [200, 200, 200]';
   top_level_params.limits_domains = limits + offsets;
   top_level_params.overlap_domains = [0, 2; 1, 3; 2, 0];
-  top_level_params.theta = [0, 1; 1, 1; 1, 0];
   top_level_params.initial_velocities = [100.0, 0.0, -100.0];
+  top_level_params.alpha1 = [0, 0.5; 0.5, 0; 0, 0.5]; %for dislacement (Robin-Robin BC)
+  top_level_params.alpha2 = [0, 1.; 1., 0; 0, 1.]; %for traction (Robin-Robin BC)
+  top_level_params.mass_damping_coefficient = 0.0;
+  top_level_params.stiffness_damping_coefficient = 0.0;
   A = top_level_params.bar_area;
   rho = top_level_params.material_density;
-  L = 0.50;
-  M = rho * A * L;
-  V = 100.0;
-  reference_energy = 0.5 * M * V * V;
-  reference_momentum = M * V;
-  zero_reference_momentum = true;
+  L1 = top_level_params.limits_domains(1, 2) - top_level_params.limits_domains(1, 1);
+  L2 = top_level_params.limits_domains(2, 2) - top_level_params.limits_domains(2, 1);
+  L3 = top_level_params.limits_domains(3, 2) - top_level_params.limits_domains(3, 1);
+  M1 = rho * A * L1;
+  M2 = rho * A * L2;
+  M3 = rho * A * L3;
+  V1 = top_level_params.initial_velocities(1);
+  V2 = top_level_params.initial_velocities(2);
+  V3 = top_level_params.initial_velocities(3);
+  reference_energy = 0.5 * M1 * V1 * V1 + 0.5 * M2 * V2 * V2 + 0.5 * M3 * V3 * V3;
+  reference_momentum = M1 * V1 + M2 * V2 + M3 * V3;
+  zero_reference_momentum = abs(reference_momentum) <= tol_zero_momentum;
 otherwise
-
-
+  error("There are only setups for 1 to 3 subdomains.");
 end
 time_interval = top_level_params.time_interval;
 time_steps = top_level_params.time_steps;
-time_step = 1.0e-07;
 time_difference = final_time - initial_time;
 num_steps = round(time_difference ./ time_step);
 top_level_params.num_steps = num_steps;
@@ -132,8 +134,10 @@ top_level_params.domain_interval = 1;
 
 [element_properties, nodal_fields] =  SetupSchwarz(top_level_params);
 
+% [element_properties, nodal_fields] = ...
+% TopLevelSchwarz(top_level_params, element_properties, nodal_fields);
 [element_properties, nodal_fields] = ...
-TopLevelSchwarz(top_level_params, element_properties, nodal_fields);
+TopLevelSchwarz_oscillations(top_level_params, element_properties, nodal_fields);
 
 % Plotting of results
 num_plots = 10;
@@ -225,26 +229,18 @@ ylabel('RELATIVE ERROR [%]');
 grid on;
 hold off;
 
-%subplot(3, 4, 5);
-%hold on;
-%title('TOTAL LINEAR MOMENTUM');
-%plot(times, LM, 'r-', 'LineWidth', 0.7);
-%xlabel('TIME');
-%ylabel('MOMENTUM [kg m/s]');
-%grid on;
-%hold off;
-
 subplot(3, 4, 5);
 hold on;
 title('LINEAR MOMENTUM ERROR');
 if zero_reference_momentum == true
-  ME = 100 * LM / reference_momentum;
+  ME = LM;
+  ylabel('DEVIATION FROM ZERO MOMENTUM');
 else
   ME = 100 * (LM - reference_momentum) / reference_momentum;
+  ylabel('RELATIVE ERROR [%]');
 end
 plot(times, ME, 'r-', 'LineWidth', 0.7);
 xlabel('TIME');
-ylabel('RELATIVE ERROR [%]');
 grid on;
 hold off;
 
@@ -371,4 +367,6 @@ grid on;
 hold off;
 
 % Save the output
-save(output_filename)
+% save(output_filename)
+
+%saveas('IMP-IMP-not-mathing_not-swap_200_10-7','pdf')

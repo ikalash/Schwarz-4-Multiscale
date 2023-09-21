@@ -16,6 +16,8 @@ function [output] = penalty_implicit(settings)
 
   beta = settings.beta;
   gamma = settings.gamma;
+%   beta = 0.25;
+%   gamma = 0.5;
 
   max_iterations = settings.max_iterations;
   newmark_tolerance = settings.newmark_tolerance;
@@ -102,38 +104,65 @@ function [output] = penalty_implicit(settings)
     C = sparse(C);
 
     x = zeros(num_nodes_total, 1);
+    xx = zeros(num_nodes_total, 1);
     a = zeros(num_nodes_total, 1);
     v = zeros(num_nodes_total, 1);
 
     for idomain = 1:num_domains
       idx_start = left_domain_indices(idomain);
       idx_end = right_domain_indices(idomain);
+      xx(idx_start:idx_end) = XV{idomain}(:, idt);
       a(idx_start:idx_end) = AV{idomain}(:, idt);
+%       if idomain == 1
+%           a(idx_end) = 0.;
+%       else
+%           a(idx_start) = 0.;
+%       end    
       v(idx_start:idx_end) = VV{idomain}(:, idt);
     end
 
     abs_error_tol = settings.newmark_tolerance;
 
     [a_new, v_new, x_new, it_count, abs_error, f_contact] = ...
-      newmark_iterative(M, C, K, f_int, a, v, x, XV, abs_error_tol, max_iterations, beta, gamma, dt, lambda, idt);
+      newmark_iterative(M, C, K, f_int, a, v, x, XV, xx, abs_error_tol, max_iterations, beta, gamma, dt, lambda, idt, num_domains, left_domain_indices, right_domain_indices);
 
     contact_force(idt) = f_contact;
-    if abs(f_contact) - small_double > 0
-      contact(idt) = true;
-    end
+%     if abs(f_contact) - small_double > 0
+%       contact(idt) = true;
+%     end
+
+%%% Introducing new contact conditions - the same as for Schwarz
+%idt
+      curr_posn_right = XV{2}(1, idt);
+      curr_posn = XV{1}(end, idt);
+      reac = f_contact;
+      overlap = curr_posn > curr_posn_right;
+      compress = reac < 0.0; 
+      persist = compress && contact(idt-1) == true;
+      contact(idt) = overlap || persist;
+%%%%%%%%%%%%
 
     it_per_time_step(idt) = it_count;
     error_per_time_step(idt) = abs_error;
 
     % update internal force vector
-    f_int = f_int + K * x_new;
+%%%%%%%%%%%%%%%%%
+% Jonathan's code  
+%      f_int = f_int + K * x_new;
+%%%%%%%%%%%%%%%%%
+       f_int = f_int + K * (x_new - xx);
+
 
     for idomain = 1:num_domains
       idx_start = left_domain_indices(idomain);
       idx_end = right_domain_indices(idomain);
       AV{idomain}(:, idt + 1) = a_new(idx_start:idx_end);
       VV{idomain}(:, idt + 1) = v_new(idx_start:idx_end);
-      XV{idomain}(:, idt + 1) = XV{idomain}(:, idt) + x_new(idx_start:idx_end);
+%%%%%%%%%%%%%%%%%
+% Jonathan's code      
+%       XV{idomain}(:, idt + 1) = XV{idomain}(:, idt) + x_new(idx_start:idx_end);
+%%%%%%%%%%%%%%%%%
+      XV{idomain}(:, idt + 1) = x_new(idx_start:idx_end);
     end
 
   end

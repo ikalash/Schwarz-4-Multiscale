@@ -1,6 +1,32 @@
 function [element_properties, nodal_fields] = ...
-        TopLevelSchwarz(top_level_params, element_properties, nodal_fields)
+        TopLevelSchwarz_oscillations(top_level_params, element_properties, nodal_fields)
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%Modified version of TopLevelSchwarz with different versions of the Newmark
+%method, stabilization techniques, etc.
+
+% Set true to activate the needed scheme
+% For the  Dissipative Newmark, change beta and gamma parameters in Driver (e.g. beta = 0.49, gamma = 0.9) 
+% For the Chaudhary-Bathe scheme, change beta and gamma parameters in Driver (beta=gamma=0.5)
+ 
+% Work for both, implicit and explicit: chose the needed options in Driver    
+% - Classic Newmark
+    classic_Newmark = true;
+% - Naive-stabilized Newmark          
+    naive_stab = false;
+
+% Explicit schemes: explicit options should be set in Driver    
+% - Tchamwa-Wielgosz Explicit scheme 
+    tw_scheme = false;
+% - Chung-Lee Explicit scheme
+    cl_scheme = false;
+
+% Implicit schemes: implicit options should be set in Driver    
+% - Contact-implicit scheme
+    contact_impl = false;
+% - Contact-stabilized scheme
+    cont_stab = false;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 num_domains = top_level_params.num_domains;
 num_steps = top_level_params.num_steps;
@@ -205,9 +231,6 @@ for step = 1 : num_steps
   iter_schwarz = 0;
   while true
 
-
-      
-
     prev_schwarz_positions = current_positions;
     internals = prev_internals;
 
@@ -256,6 +279,8 @@ for step = 1 : num_steps
 
         domain_time = time + domain_time_step * domain_step;
         free_dof = true(num_nodes, 1);
+        free_dof1 = true(num_nodes, 1);
+        cont_dof = false(num_nodes, 1);
 
         % If contact has occurred determine the appropriate boundary conditions.
         if contact_right(domain) == true
@@ -271,14 +296,22 @@ for step = 1 : num_steps
           vn = interp1(T, V, t, 'linear', 'extrap');
           an = interp1(T, A, t, 'linear', 'extrap');
           rn = interp1(T, R, t, 'linear', 'extrap');
+%           xn = posn_histories{domain_right}(step + 1, 1);
+%           vn = velo_histories{domain_right}(step + 1, 1);
+%           an = acce_histories{domain_right}(step + 1, 1);
+%           rn = reac_histories{domain_right}(step + 1, 1);
           if dirichlet_bc_right == true
             current_positions{domain}(end) = xn;
             velocities{domain}(end) = vn;
             accelerations{domain}(end) = an;
             free_dof(end) = false;
+            free_dof1(end) = true;
+            cont_dof(end) = false;
           end
           if neumann_bc_right == true
             fext(end) = -rn;
+            free_dof1(end) = false;
+            cont_dof(end) = true;
           end
           if robinrobin_bc == true
             current_positions{domain}(end) = alpha1_right * xn;
@@ -302,14 +335,22 @@ for step = 1 : num_steps
           vn = interp1(T, V, t, 'linear', 'extrap');
           an = interp1(T, A, t, 'linear', 'extrap');
           rn = interp1(T, R, t, 'linear', 'extrap');
+%           xn = posn_histories{domain_left}(step + 1, end);
+%           vn = velo_histories{domain_left}(step + 1, end);
+%           an = acce_histories{domain_left}(step + 1, end);
+%           rn = reac_histories{domain_left}(step + 1, end);
           if dirichlet_bc_left == true
             current_positions{domain}(1) = xn;
             velocities{domain}(1) = vn;
             accelerations{domain}(1) = an;
             free_dof(1) = false;
+            free_dof1(1) = true;
+            cont_dof(1) = false;
           end
           if neumann_bc_left == true
             fext(1) = -rn;
+            free_dof1(1) = false;
+            cont_dof(1) = true;
           end
           if robinrobin_bc == true
             current_positions{domain}(1) = alpha1_left * xn;
@@ -344,9 +385,10 @@ for step = 1 : num_steps
         if integration_schemes(domain) == implicit
           % Implicit integration
 
-          % Predictor     
-          % Classical Newmark         
-
+          % Predictor
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%           
+% Classic Newmark
+    if classic_Newmark == true || naive_stab == true || contact_impl == true
           x_pre = x;
           x_pre(free_dof) = x_prev(free_dof) + ...
                             v_prev(free_dof) * dt + ...
@@ -357,6 +399,84 @@ for step = 1 : num_steps
                             a_prev(free_dof) * (1 - gamma) * dt;
 
           a(free_dof) = (x(free_dof) - x_pre(free_dof)) / beta / dt / dt;
+    end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+% % % % Contact-Stabilized Newmark from Deuflard  
+        if cont_stab == true
+            if (contact_left(domain) == true) || (contact_right(domain) == true)  
+    
+             if iter_schwarz == 0
+            
+              x_pre = x;
+              iter_cont_stab = 1;
+    
+              % Newton iterations
+              while true
+                  q = Q;
+    
+                 [K, M, C, fres1, q, P, e, PE] = Assembly(X, x_pre, ...
+                  E, A, rho, q, 0, 0, 1, ...
+                  element_properties.constitutive_law, ...
+                  top_level_params.mass_damping_coefficient, ...
+                  top_level_params.stiffness_damping_coefficient);
+                  
+             
+                  M_tilde = (zeros(num_nodes,num_nodes));
+                  M_tilde(free_dof1,free_dof1) = M(free_dof1,free_dof1);
+                  K_con = (zeros(num_nodes,num_nodes));
+                  K_con(cont_dof,cont_dof) = K(cont_dof,cont_dof);
+                  rr = fext;
+    
+                  K_eff = M_tilde + K_con;
+                  RHS = - M_tilde * x_pre + M_tilde * x_prev + dt * M_tilde * v_prev - rr;
+                  xx_delta = K_eff(free_dof,free_dof) \ RHS(free_dof) ;
+                  
+                  x_pre(free_dof) = x_pre(free_dof) + xx_delta;
+    
+                  abs_error1 = norm(xx_delta);
+                  norm_posn1 = norm(x_pre);
+    
+                  if norm_posn1 > 0.0
+                    rel_error1 = abs_error1 / norm_posn1;
+                  else
+                    if abs_error1 > 0
+                      rel_error1 = 1.0;
+                    else
+                      rel_error1 = 0.0;
+                    end
+                  end
+    
+                  converged_rel1 = rel_error1 < 1e-4;
+                  converged_abs1 = abs_error1 < 1e-4;
+                  converged1 = (converged_rel1 || converged_abs1);    
+                  
+                  if converged1 == 1 || iter_cont_stab == 10 
+                    break;
+                  end
+    
+                  iter_cont_stab = iter_cont_stab + 1;
+              end    
+            else
+              x_pre = x;
+              x_pre(free_dof) = x_prev(free_dof) + ...
+                                v_prev(free_dof) * dt + ...
+                                a_prev(free_dof) * (0.5 - beta) * dt * dt;  
+            end
+            else
+              x_pre = x;
+              x_pre(free_dof) = x_prev(free_dof) + ...
+                                v_prev(free_dof) * dt + ...
+                                a_prev(free_dof) * (0.5 - beta) * dt * dt;  
+            end
+              v_pre = v;
+              v_pre(free_dof) = v_prev(free_dof) + ...
+                                a_prev(free_dof) * (1 - gamma) * dt;
+    
+              a(free_dof) = (x(free_dof) - x_pre(free_dof)) / beta / dt / dt;
+        end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
 
           iter_domain = 1;
 
@@ -371,6 +491,9 @@ for step = 1 : num_steps
               top_level_params.mass_damping_coefficient, ...
               top_level_params.stiffness_damping_coefficient);
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%            
+% % Classical Newmark
+    if classic_Newmark == true || naive_stab == true
             TM = M / beta / dt / dt + C * gamma / beta / dt + K;
             fvis = C * v;
             fine = M * a;
@@ -380,6 +503,33 @@ for step = 1 : num_steps
             x(free_dof) = x(free_dof) + delta;
             a(free_dof) = (x(free_dof) - x_pre(free_dof)) / beta / dt / dt;
             v(free_dof) = v_pre(free_dof) + gamma * dt * a(free_dof); 
+    end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%             
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+% % % Dissipative Newmark from Kane (modified) - needed for the
+% Contact-stabilized Nemark 
+    if cont_stab == true || contact_impl == true
+            TM = M / beta / dt / dt + C * gamma / beta / dt + K;   
+            fvis = C * v;
+            fint = fres + fvis;
+            fine = M * a;
+            r = fext - fint - fine ;
+            delta = TM(free_dof, free_dof) \ r(free_dof);
+
+            x(free_dof) = x(free_dof) + delta  ;
+
+            if (contact_left(domain) == true) || (contact_right(domain) == true)
+                a_int = M \ (- fint); 
+                a_con = 2*((x - x_pre) / dt / dt - 2 * beta * a_int);
+                a = a_int + a_con;
+                v(free_dof) = v_prev(free_dof) + dt * (1 - gamma) * a_int(free_dof) + dt * gamma * a_int(free_dof) + dt * a_con(free_dof);
+            else    
+                a(free_dof) = (x(free_dof) - x_pre(free_dof)) / beta / dt / dt;
+                v(free_dof) = v_pre(free_dof) + gamma * dt * a(free_dof);  
+            end
+    end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
             p = M * v;
             KE = 0.5 * v' * p;
@@ -419,33 +569,110 @@ for step = 1 : num_steps
 
           end % iterate nonlinear solver
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
+% Naive-stabilized Newmark          
+          if naive_stab == true
+            if (contact_right(domain) == true) 
+               if domain == 1
+                  a(end) = 0.;
+               end
+            elseif (contact_left(domain) == true)    
+               if domain == 2
+                  a(1) = 0.;
+               end
+            end 
+          end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
+
         elseif integration_schemes(domain) == explicit
           % Explicit integration
 
-          % Predictor       
-          % Central finite difference scheme
+          % Predictor
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%           
+% % Central finite difference scheme
+    if classic_Newmark == true || naive_stab == true
           x(free_dof) = x_prev(free_dof) + ...
                         v_prev(free_dof) * dt + ...
                         a_prev(free_dof) * dt * dt * 0.5 ;
 
           v(free_dof) = v_prev(free_dof) + ...
                         a_prev(free_dof) * (1 - gamma) * dt;
+    end      
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+% % Dissipative Tchamwa–Wielgosz scheme
+    if tw_scheme == true
+              phi = 1.05;
+              x(free_dof) = x_prev(free_dof) + ...
+                            v_prev(free_dof) * dt + ...
+                            a_prev(free_dof) * dt * dt * phi ;
+    
+              v(free_dof) = v_prev(free_dof) + ...
+                            a_prev(free_dof) * dt;
+    end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+% % Chung-Lee
+    if cl_scheme == true
+          beta1 = 1.0;
+          hatbeta = 1/2 - beta1;
+          gamma1 = 3/2;
+          hatgamma = 1 - gamma1;
+          
+          x(free_dof) = x_prev(free_dof) + ...
+                        v_prev(free_dof) * dt + ...
+                        a_prev(free_dof) * dt * dt * hatbeta ;
+
+          v(free_dof) = v_prev(free_dof) + ...
+                        a_prev(free_dof) * dt * hatgamma;
+    end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
           [~, M, C, fres, q, P, e, PE] = Assembly(X, x, E, A, ...
           rho, Q, 1, 1, 1, ...
           element_properties.constitutive_law, ...
           top_level_params.mass_damping_coefficient, ...
           top_level_params.stiffness_damping_coefficient);
-   
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+% % Central finite difference scheme         
+    if classic_Newmark == true || naive_stab == true || cl_scheme == true || tw_scheme == true
           fvis = diag(C) .* v;
           fine = M .* a;
           fint = fres + fvis;
           r = fext - fint - fine;
           delta = r(free_dof) ./ M(free_dof);
-          a(free_dof) = a(free_dof) + delta;     
+          a(free_dof) = a(free_dof) + delta;
+    end
 
-          % Corrector
-          v(free_dof) = v(free_dof) + gamma * dt * a(free_dof);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+% Corrector
+    if classic_Newmark == true || naive_stab == true
+           v(free_dof) = v(free_dof) + gamma * dt * a(free_dof);
+    end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+% Naive-stabilized Newmark          
+          if naive_stab == true
+            if (contact_right(domain) == true) 
+               if domain == 1
+                  a(end) = 0.;
+               end
+            elseif (contact_left(domain) == true)    
+               if domain == 2
+                  a(1) = 0.;
+               end
+            end 
+          end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+% % Chung-Lee
+    if cl_scheme == true
+          v(free_dof) = v(free_dof) + gamma1 * dt * a(free_dof);
+          x(free_dof) = x(free_dof) + beta1 * dt * dt * a(free_dof);
+    end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
           p = M .* v;
           KE = 0.5 * v' * p;
@@ -461,9 +688,7 @@ for step = 1 : num_steps
         x_prev = x;
         v_prev = v;
         a_prev = a;
-
-      end % domain steps
-
+        
       current_positions{domain} = x';
       velocities{domain} = v';
       accelerations{domain} = a';
@@ -492,6 +717,10 @@ for step = 1 : num_steps
       kinetic_energies(domain, step + 1) = KE;
       total_energies(domain, step + 1) = KE + PE;
       linear_momenta(domain, step + 1) = LM;
+
+      end % domain steps
+
+
 
       baseline_norms(domain) = norm(x);
       dx = x' - prev_schwarz_positions{domain};
@@ -539,11 +768,11 @@ for step = 1 : num_steps
     end
 
   end % iterate domains (Schwarz iteration)
-
+ 
   if robinrobin_bc == false
-    swap = dirichlet_bc;
-    dirichlet_bc = neumann_bc;
-    neumann_bc = swap;
+   swap = dirichlet_bc;
+   dirichlet_bc = neumann_bc;
+   neumann_bc = swap;
   end  
 
   schwarz_iter_history(step) = iter_schwarz;

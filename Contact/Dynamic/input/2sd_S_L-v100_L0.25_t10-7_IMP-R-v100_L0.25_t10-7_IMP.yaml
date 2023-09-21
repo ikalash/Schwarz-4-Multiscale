@@ -1,0 +1,31 @@
+#Newmark-beta parameters
+gamma: 0.5
+beta: 0.25
+
+#Parameters related to time-stepping
+dt: 1.0e-7
+t_start: -0.2e-03
+t_end: 0.8e-03
+
+#Schwarz- and Newton-related parameters
+theta: [[0.0, 1.0], [1.0, 0.0]] 
+integration_schemes: [0, 0] #0 = implicit, 1 = explicit
+time_steps: [1e-7, 1e-7]
+number_elements_domain: [200, 200]
+initial_velocities: [100.0, -100.0]
+limits_domains: [[-0.25, 0.0], [0.0, 0.25]]
+overlap_domains: [[0, 2], [1, 0]]
+
+#To compute the anaytical solution
+veloc: 100.
+coef1: 2.
+coef2: 2.
+bool: true
+
+output_filename: 'output/2sd_S_L-v100_L0.25_t10-7_IMP-R-v100_L0.25_t10-7_IMP.mat'
+output_figname: 'output/2sd_S_L-v100_L0.25_t10-7_IMP-R-v100_L0.25_t10-7_IMP.fig'
+output_figname2: 'output/2sd_S_L-v100_L0.25_t10-7_IMP-R-v100_L0.25_t10-7_IMP_separate.fig'
+
+
+conventional: 'input/output_conventional_L-v100_L0.25_t10-7-R-v100_L0.25_t10-7.mat'
+comp_fig: 'output/comp_convent_vs_Schwarz_L-v100_L0.25_t10-7_IMP-R-v100_L0.25_t10-7_IMP.fig'

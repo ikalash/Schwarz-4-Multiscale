@@ -4,47 +4,50 @@ clear all
 % Add the yaml library
 addpath('../../YAMLMatlab_0.4.3/')
 
-%set the config filename
-%settings_filename = 'contact_settings.yaml';
-settings_filename = 'contact_settings_carpenter.yaml';
+% %set the config filename
+ settings_filename = 'contact_settings.yaml';
+%settings_filename = 'contact_settings_carpenter.yaml';
 
-output_dir = "output_low_speed/";
+output_dir = "output_conventional_methods/";
 mkdir(output_dir);
-output_filename = output_dir + "output.mat";
+output_filename = output_dir + "explicit_LM_contact_crit.mat";
 
 settings = ReadYaml(settings_filename);
 
-%% run implicit penalty method
-implicit_penalty_output = penalty_implicit(settings);
+% %% run implicit penalty method
+% implicit_penalty_output = penalty_implicit(settings);
 
 %% run lagrange multiplier method
-%settings.augmented_lagrange_mode = 0;
-%lagrange_output = TopLevelLagrange_Disp(settings);  
+% settings.augmented_lagrange_mode = 0;
+% % implicit_lagrange_output = TopLevelLagrange_Accel(settings);  
+% implicit_lagrange_output = TopLevelLagrange_Disp_Jon(settings); 
+% % implicit_lagrange_output = lagrange_implicit_accel(settings);  
+% implicit_lagrange_output = lagrange_implicit(settings);  
 
 %% run augmented lagrange method
-%settings.augmented_lagrange_mode = 1;
-%augmented_lagrange_output = TopLevelLagrange_Disp(settings);
+% settings.augmented_lagrange_mode = 1;
+% implicit_lagrange_output = TopLevelLagrange_Disp(settings);
 
 %% run explicit penalty method
-settings.penalty_mode = 1;
-explicit_penalty_output = penalty_explicit(settings);
-
-%% run explicit lagrange method
+% settings.penalty_mode = 1;
+% explicit_penalty_output = penalty_explicit(settings);
+% 
+% % %% run explicit lagrange method
 settings.penalty_mode = 0;
 explicit_lagrange_output = lagrange_explicit(settings);
 
 
-%% run implicit implicit Schwarz method
-settings.dt_schwarz = 1.0e-7;
-settings.dt_domains = {1.0e-7, 1.0e-7};
-settings.integration_schemes = {0, 0};
-implicit_implicit_schwarz_output = SchwarzMethod(settings);
-
-%% run explicit implicit schwarz method
-settings.dt_schwarz = 2.0e-7;
-settings.dt_domains = {(2.0e-7) / 3, (2.0e-7) / 2};
-settings.integration_schemes = {1, 0};
-explicit_implicit_schwarz_output = SchwarzMethod(settings); 
+% %% run implicit implicit Schwarz method
+% settings.dt_schwarz = 1.0e-7;
+% settings.dt_domains = {1.0e-7, 1.0e-7};
+% settings.integration_schemes = {0, 0};
+% implicit_implicit_schwarz_output = SchwarzMethod(settings);
+% 
+% %% run explicit implicit schwarz method
+% settings.dt_schwarz = 2.0e-7;
+% settings.dt_domains = {(2.0e-7) / 3, (2.0e-7) / 2};
+% settings.integration_schemes = {1, 0};
+% explicit_implicit_schwarz_output = SchwarzMethod(settings); 
 
 %% compare to analytical solution
 g = (settings.x0_start{2} -  settings.x1_start{1}) / 2;
@@ -364,5 +367,9 @@ close
 %}
 %% save the output
 
-save(output_filename,'settings', 'analytical_output', 'implicit_penalty_output', 'explicit_lagrange_output','explicit_penalty_output','implicit_implicit_schwarz_output', 'explicit_implicit_schwarz_output'); 
+% save(output_filename,'settings', 'analytical_output', 'implicit_penalty_output', 'explicit_lagrange_output','explicit_penalty_output','implicit_implicit_schwarz_output', 'explicit_implicit_schwarz_output'); 
+% save(output_filename,'settings', 'analytical_output', 'implicit_lagrange_output'); 
+% save(output_filename,'settings', 'analytical_output', 'implicit_penalty_output'); 
+% save(output_filename,'settings', 'analytical_output', 'explicit_penalty_output'); 
+save(output_filename,'settings', 'analytical_output', 'explicit_lagrange_output'); 
 

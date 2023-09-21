@@ -1,8 +1,7 @@
 clear variables;
 initial_time = -0.0e-03;
 final_time = 2.0e-04;
-
-small_number = 1.0e-64;
+time_step = 1.0e-06;
 
 output_filename = 'schwarz_method.mat';
 
@@ -98,8 +97,8 @@ case 3
   top_level_params.initial_velocities = [100.0, 0.0, -100.0];
   A = top_level_params.bar_area;
   rho = top_level_params.material_density;
-  %L = 0.50;
-  %M = rho * A * L;
+  L = 0.50;
+  M = rho * A * L;
   V = 100.0;
   reference_energy = 0.5 * M * V * V;
   reference_momentum = M * V;
@@ -110,7 +109,6 @@ otherwise
 end
 time_interval = top_level_params.time_interval;
 time_steps = top_level_params.time_steps;
-time_step = 1.0e-06;
 time_difference = final_time - initial_time;
 num_steps = round(time_difference ./ time_step);
 top_level_params.num_steps = num_steps;

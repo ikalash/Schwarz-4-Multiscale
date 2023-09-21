@@ -25,6 +25,7 @@ for domain = 1 : num_domains
   current_positions{domain} = reference_positions{domain};
   velocities{domain} = initial_velocity * ones(1, num_nodes);
   accelerations{domain} = zeros(1, num_nodes);
+%   a_int{domain} = zeros(1, num_nodes);
   reactions{domain} = zeros(1, num_nodes);
   posn_histories{domain} = zeros(num_steps + 1, num_nodes);
   velo_histories{domain} = zeros(num_steps + 1, num_nodes);
@@ -32,12 +33,14 @@ for domain = 1 : num_domains
   reac_histories{domain} = zeros(num_steps + 1, num_nodes);
   cont_histories{domain} = false(num_steps + 1, 2);
   schwarz_iter_history = zeros(num_steps + 1, 1);
+  end_masses{domain} = [0.0, 0.0];
 end
 
 nodal_fields.reference_positions = reference_positions;
 nodal_fields.current_positions = current_positions;
 nodal_fields.velocities = velocities;
 nodal_fields.accelerations = accelerations;
+% nodal_fields.a_int = a_int;
 nodal_fields.reactions = reactions;
 
 nodal_fields.posn_histories = posn_histories;
@@ -46,6 +49,7 @@ nodal_fields.acce_histories = acce_histories;
 nodal_fields.reac_histories = reac_histories;
 nodal_fields.cont_histories = cont_histories;
 nodal_fields.schwarz_iter_history = schwarz_iter_history;
+nodal_fields.end_masses = end_masses;
 
 element_properties.moduli = cell(num_domains);
 element_properties.areas = cell(num_domains);

@@ -71,7 +71,8 @@ top_level_params.integration_schemes = cell2mat(settings.integration_schemes);
 
 [element_properties, nodal_fields] = SetupSchwarz(top_level_params);
 
-[element_properties, nodal_fields] = TopLevelSchwarz(top_level_params, element_properties, nodal_fields);
+%[element_properties, nodal_fields] = TopLevelSchwarz(top_level_params, element_properties, nodal_fields);
+[element_properties, nodal_fields] = TopLevelSchwarz_Daria(top_level_params, element_properties, nodal_fields);
 
 % convert nodal fields to
 output.XV = nodal_fields.posn_histories;
