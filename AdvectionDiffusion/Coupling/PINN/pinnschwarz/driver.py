@@ -1,6 +1,7 @@
 import time
 import argparse
 import os
+import sys
 
 import tensorflow as tf
 # num_threads = 1
@@ -19,7 +20,6 @@ from matplotlib import pyplot as plt
 
 from pinnschwarz.pde import PDE_1D_Steady_AdvecDiff
 from pinnschwarz.pinn import PINN_Architecture, FD_1D_Steady, PINN_Schwarz_Steady
-
 
 # Set data type
 DTYPE = 'float64'
@@ -58,6 +58,17 @@ nl = 20
 retrieve = 1
 
 # ----- END FIXED INPUTS -----
+
+class Logger():
+    def __init__(self, logfile):
+        self.terminal = sys.stdout
+        self.log = open(logfile, "w")
+
+    def write(self, output):
+        self.terminal.write(output)
+        self.log.write(output)
+        self.log.flush()
+
 
 def driver(parameter_file, outdir):
 
@@ -143,6 +154,7 @@ def driver(parameter_file, outdir):
 
         # Set random seed for reproducible results
         tf.random.set_seed(0)
+        np.random.seed(0)
 
         # Declare nu based on Peclet number
         Pe = ParameterSweep.loc[z, 'Peclet Number']
@@ -194,6 +206,7 @@ def driver(parameter_file, outdir):
         schwarz_conv = 1
         ref_err = 1
         iterCount = 0
+        np.random.seed(0)
         x_schwarz = [tf.constant(np.linspace(s[0], s[1], num=n_FD), shape=(n_FD, 1), dtype=DTYPE) for s in sub]
         u_i_minus1 = [tf.constant(np.random.rand(n_FD,1), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
         u_i = [tf.constant(np.zeros((n_FD,1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
@@ -212,6 +225,8 @@ def driver(parameter_file, outdir):
         )
         if not os.path.isdir(figdir):
             os.mkdir(figdir)
+        logger = Logger(os.path.join(figdir, "log.txt"))
+
         framecount = 1
 
         # Begin recording time
@@ -313,7 +328,8 @@ def driver(parameter_file, outdir):
             framecount += 1
 
             # Output current Schwarz error
-            print('\nSchwarz iteration {:d}: Convergence error = {:10.8e}, Reference Error = {:10.8e}'.format(iterCount, schwarz_conv, ref_err), "\n")
+            print("")
+            logger.write('Schwarz iteration {:d}: Convergence error = {:10.8e}, Reference Error = {:10.8e}\n'.format(iterCount, schwarz_conv, ref_err))
 
             # Cut off simulat at a particular number of Schwarz iterations
             if (iterCount == 100):
