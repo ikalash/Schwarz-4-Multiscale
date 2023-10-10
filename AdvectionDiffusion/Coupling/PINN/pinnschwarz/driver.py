@@ -16,6 +16,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+import yaml
 
 from pinnschwarz.pde import PDE_1D_Steady_AdvecDiff
 from pinnschwarz.pinn import PINN_Architecture, FD_1D_Steady, PINN_Schwarz_Steady
@@ -26,32 +27,34 @@ DTYPE = 'float64'
 tf.keras.backend.set_floatx(DTYPE)
 
 
-# ----- START FIXED INPUTS -----
+# ----- START INPUTS FROM YAML -----
+with open('hyper.yaml', 'r') as file:
+    hyper = yaml.safe_load(file)
 
 # Initialize order parameter for PDE
-order = 2
+order = hyper['PDE']['order']
 
 # number of internal collocation points
-N = 2**10
+N = 2**int(hyper['PDE']['power'])
 # number of boundary and interface points
-N_b = 2**6
+N_b = 2**int(hyper['PDE']['b_power'])
 
 
 # Initialize list of points which lie on the system boundaries
-domain = [0, 1]
+domain = hyper['PDE']['domain']
 
-beta = 1
+beta = hyper['PDE']['beta']
 
 # Declare constant hyperparameters
-alpha = 0.2
-numEpochs = 2**10
-learn_rate = 0.001
-schwarz_tol = 0.001
-err_tol = 0.005
+alpha = hyper['hyper']['alpha']
+numEpochs = 2**int(hyper['hyper']['epochs_power'])
+learn_rate = hyper['hyper']['learn_rate']
+schwarz_tol = hyper['hyper']['schwarz_tol']
+err_tol = hyper['hyper']['err_tol']
 
 # Set number of hidden layers and nodes per layer
-hl = 2
-nl = 20
+hl = hyper['NN_para']['hl']
+nl = hyper['NN_para']['nl']
 
 # This parameter is true when you are retrieving a file for a parameter sweep
 # Otherwise you are drawing a single test case from the manual test file
