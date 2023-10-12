@@ -1,0 +1,28 @@
+# PDE Settings
+PDE:
+  order : 2
+  # number of internal collocation points, the power of 2
+  # origional N = 2 ** 10, so here is 10
+  power : 10
+  # number of boundary and interface points, the power of 2
+  # origional N = 2 ** 6, so here is 6
+  b_power : 6
+  # Initialize list of points which lie on the system boundaries
+  domain : [0, 1]
+  beta : 1
+
+# Declare constant hyperparameters
+hyper:
+  alpha : 0.2
+  # numEpochs, the power of 10
+  # origional numEpochs = 2 ** 10, so here is 10
+  epochs_power : 10
+  learn_rate : 0.001
+  schwarz_tol : 0.001
+  err_tol : 0.005
+
+NN_para:
+  # Set number of hidden layers and nodes per layer
+  hl : 2
+  nl : 20
+
