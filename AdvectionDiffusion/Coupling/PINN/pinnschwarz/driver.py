@@ -26,6 +26,8 @@ from pinnschwarz.pinn import PINN_Architecture, FD_1D_Steady, PINN_Schwarz_Stead
 DTYPE = 'float64'
 tf.keras.backend.set_floatx(DTYPE)
 
+dir_path = os.path.dirname(os.path.realpath(__file__))
+breakpoint()
 
 # ----- START INPUTS FROM YAML -----
 with open('hyper.yaml', 'r') as file:
@@ -37,6 +39,7 @@ order = hyper['PDE']['order']
 # number of internal collocation points
 N = 2**int(hyper['PDE']['power'])
 # number of boundary and interface points
+# THIS IS INCORRECT
 N_b = 2**int(hyper['PDE']['b_power'])
 
 
@@ -337,8 +340,10 @@ def driver(parameter_file, outdir):
         ParameterSweep.loc[z, 'Schwarz Iterations'] = iterCount
         ParameterSweep.loc[z, 'Avg L2 Error'] = np.float64(ref_err)
 
-        # Export final results to CSV
+        # Export final metrics to CSV
         ParameterSweep.to_csv(os.path.join(outdir, "ParamResults.csv"))
+
+        # write final solution to disk
 
         plt.close(fig)
 
