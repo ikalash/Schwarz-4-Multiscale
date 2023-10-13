@@ -181,19 +181,19 @@ def driver(parameter_file, outdir):
                 model_om += ( PINN_Architecture(xl=xl, xr=xr, num_hidden_layers=hl, num_neurons_per_layer=nl), )
                 model_om[i].build(input_shape=(None, X_r_om[i].shape[1]))
 
-                continue
+            else:
 
-            # If subdomain is to be modeled by FD, construct uniform line space for FD on subdomain
-            xl = sub[i][0]
-            xr = sub[i][1]
-            x_FD = np.linspace(xl, xr, num=n_FD)
+                # If subdomain is to be modeled by FD, construct uniform line space for FD on subdomain
+                xl = sub[i][0]
+                xr = sub[i][1]
+                x_FD = np.linspace(xl, xr, num=n_FD)
 
-            # Add line space for subdomain to internal point storage
-            X_r_om += ( tf.constant(x_FD, shape=(x_FD.shape[0],1), dtype=DTYPE), )
+                # Add line space for subdomain to internal point storage
+                X_r_om += ( tf.constant(x_FD, shape=(x_FD.shape[0],1), dtype=DTYPE), )
 
-            model = FD_1D_Steady(x_FD, domain, pde1)
+                model = FD_1D_Steady(x_FD, domain, pde1)
 
-            model_om += ( model, )
+                model_om += ( model, )
 
 
         # Initialize schwarz loop operators
