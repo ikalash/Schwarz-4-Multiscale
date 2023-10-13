@@ -235,7 +235,7 @@ class Driver():
                 )
                 if not os.path.isdir(figdir):
                     os.mkdir(figdir)
-                logger = Logger(os.path.join(figdir, "log.txt"))
+                #logger = Logger(os.path.join(figdir, "log.txt"))
             
             framecount = 1
     
@@ -322,7 +322,8 @@ class Driver():
     
     
                     # update frame for animation
-                    subdomain_plots[s][0].set_data(x_schwarz[s][:,0], u_i[s])
+                    if self.make_fig:
+                        subdomain_plots[s][0].set_data(x_schwarz[s][:,0], u_i[s])
     
     
                 # Calculate the normalized difference between u for the current iteration and u for the previous iteration
@@ -340,7 +341,7 @@ class Driver():
     
                 # Output current Schwarz error
                 print("")
-                logger.write('Schwarz iteration {:d}: Convergence error = {:10.8e}, Reference Error = {:10.8e}\n'.format(iterCount, schwarz_conv, ref_err))
+                # logger.write('Schwarz iteration {:d}: Convergence error = {:10.8e}, Reference Error = {:10.8e}\n'.format(iterCount, schwarz_conv, ref_err))
     
                 # Cut off simulat at a particular number of Schwarz iterations
                 if (iterCount == 100):
