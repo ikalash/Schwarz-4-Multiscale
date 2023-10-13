@@ -56,10 +56,6 @@ err_tol = hyper['hyper']['err_tol']
 hl = hyper['NN_para']['hl']
 nl = hyper['NN_para']['nl']
 
-# This parameter is true when you are retrieving a file for a parameter sweep
-# Otherwise you are drawing a single test case from the manual test file
-retrieve = 1
-
 # ----- END FIXED INPUTS -----
 
 class Logger():
@@ -79,12 +75,7 @@ def driver(parameter_file, outdir):
         os.mkdir(outdir)
 
     # Initialize dataframe for parameters and results storage
-    if retrieve:
-        ParameterSweep = pd.read_csv(parameter_file)
-    else:
-        PS = pd.read_csv(parameter_file)
-        pos = 9+PS.loc[0, 'Sub-domains']
-        ParameterSweep = PS.drop(PS.iloc[:,pos:len(PS.columns)], axis=1)
+    ParameterSweep = pd.read_csv(parameter_file)
 
     # parameter sweep loop
     for z in range(len(ParameterSweep.index)):
