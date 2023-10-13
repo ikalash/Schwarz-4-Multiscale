@@ -229,13 +229,14 @@ class Driver():
                 ref, = plt.plot(x_true, u_true, 'k--')
                 subdomain_plots = [plt.plot([], []) for _ in range(n_subdomains)]
         
-                figdir = os.path.join(
-                    self.outdir,
-                    NN_label+BC_label+FOM_label+"_Pe_{:d}_nSub_{:d}_over{:f}".format(int(beta/nu), n_subdomains, percent_overlap)
-                )
-                if not os.path.isdir(figdir):
-                    os.mkdir(figdir)
-                #logger = Logger(os.path.join(figdir, "log.txt"))
+            figdir = os.path.join(
+                self.outdir,
+                NN_label+BC_label+FOM_label+"_Pe_{:d}_nSub_{:d}_over{:f}".format(int(beta/nu), n_subdomains, percent_overlap)
+            )
+            if not os.path.isdir(figdir):
+                os.mkdir(figdir)
+                
+            logger = Logger(os.path.join(figdir, "log.txt"))
             
             framecount = 1
     
@@ -341,7 +342,7 @@ class Driver():
     
                 # Output current Schwarz error
                 print("")
-                # logger.write('Schwarz iteration {:d}: Convergence error = {:10.8e}, Reference Error = {:10.8e}\n'.format(iterCount, schwarz_conv, ref_err))
+                logger.write('Schwarz iteration {:d}: Convergence error = {:10.8e}, Reference Error = {:10.8e}\n'.format(iterCount, schwarz_conv, ref_err))
     
                 # Cut off simulat at a particular number of Schwarz iterations
                 if (iterCount == 100):
