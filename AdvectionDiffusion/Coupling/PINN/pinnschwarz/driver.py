@@ -374,3 +374,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     train_mod = Driver(args.parameter_file, args.outdir, 'hyper.yaml', False)
+    train_mod.train()
