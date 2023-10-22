@@ -1,5 +1,5 @@
 from ray import tune
-import driver
+import driver_ray
 
 search_space = {
     # enter param space
@@ -8,7 +8,7 @@ search_space = {
 }
 
 def objective(config):
-    cpu_time = driver.Driver(
+    cpu_time = driver_ray.Driver(
         "/home/users/jinnyc/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/cases/example/input.csv",
         "/scratch/users/jinnyc/test/optimize",
         "/home/users/jinnyc/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/pinnschwarz/hyper.yaml",
