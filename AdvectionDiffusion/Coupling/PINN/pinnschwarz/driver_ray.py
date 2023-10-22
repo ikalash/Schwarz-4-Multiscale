@@ -309,7 +309,7 @@ class Driver():
                 print("")
                 
                 # Cut off simulat at a particular number of Schwarz iterations
-                if (iterCount == 100):
+                if (iterCount == 50):
                     break
     
             # End time recording
