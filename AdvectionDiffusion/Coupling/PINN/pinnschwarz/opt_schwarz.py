@@ -1,5 +1,5 @@
 from ray import tune
-import driver_schwartz
+import driver_schwarz
 from ray.tune.search.bayesopt import BayesOptSearch
 
 search_space = {
@@ -9,9 +9,9 @@ search_space = {
 }
 
 def objective(config):
-    cpu_time = driver_schwartz.Driver("/Users/maguo/Desktop/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/cases/example/input.csv",
-                             "/Users/maguo/Desktop/test",
-                             "/Users/maguo/Desktop/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/pinnschwarz/hyper.yaml",
+    cpu_time = driver_schwarz.Driver("/home/users/siqima/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/cases/example/input.csv",
+                             "/scratch/users/siqima/test_optimizer",
+                             "/home/users/siqima/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/pinnschwarz/hyper.yaml",
                              make_fig=False,
                              n_subdomains=config['n_subdomains'],
                              percent_overlap=config['percentage_overlap']).train()
