@@ -329,3 +329,22 @@ class Driver():
             
         return self.end - self.start
 
+if __name__ == "__main__":
+    
+    parameter_file = "/home/users/siqima/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/cases/example/input.csv"
+    outdir = "/scratch/users/siqima/test_optimizer"
+    hyper_file = "/home/users/siqima/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/pinnschwarz/hyper.yaml"
+    
+    """
+    parameter_file = "//Users/maguo/Desktop/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/cases/example/input.csv"
+    outdir = "/Users/maguo/Desktop/test_optimizer"
+    hyper_file = "/Users/maguo/Desktop/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/pinnschwarz/hyper.yaml"
+    """
+    
+    percentage_overlap = float(sys.argv[1])
+    n_subdomains = int(sys.argv[2])
+
+
+    train_mod = Driver(parameter_file, outdir, hyper_file, False, percentage_overlap, n_subdomains)
+    cpu_time = train_mod.train()
+    print(cpu_time)
