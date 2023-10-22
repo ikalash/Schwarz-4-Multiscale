@@ -1,9 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=testSchwarz
+#SBATCH --job-name=schwarz
 #SBATCH --time=360:00
 #SBATCH -p normal
 #SBATCH -c 1
 #SBATCH --mem=16GB
+#SBATCH -o /scratch/users/jinnyc/test/optimize/%j.out
+
 module load system
 module load git
 module load python/3.9.0
