@@ -114,7 +114,7 @@ class FD_1D_Steady():
 
 
 class PINN_Schwarz_Steady():
-    def __init__(self, pde, model_r, model_i, SDBC, X_r, X_b, alpha, snap):
+    def __init__(self, pde, model_r, model_i, SDBC, X_r, X_b, alpha, snap, lamb_xb, BC_mixing,Schwarz_Iteration):
 
         # Store PDE
         self.pde = pde
@@ -126,11 +126,20 @@ class PINN_Schwarz_Steady():
         # Check for SDBC enforcement
         self.sdbc = SDBC
 
+        # set BC treatment mixing boolean
+        self.BC_mixing = BC_mixing
+
         # Store internal collocation points
         self.x = X_r
 
         # Store boundary points
         self.xb = X_b
+
+        # store lambda
+        self.lamb_xb = lamb_xb
+
+        # Store Schwarz iteration
+        self.sch_iter = Schwarz_Iteration
 
         # Store snapshot points if applicable
         if snap:
@@ -203,7 +212,9 @@ class PINN_Schwarz_Steady():
 
 
     @tf.function
-    def get_residual(self, x):
+
+    def get_gradients(self,model,x):
+        # function to calculate the first and second derivative using graident tape 
 
         with tf.GradientTape(persistent=True) as tape:
             # Watch variable x during this GradientTape
@@ -211,9 +222,9 @@ class PINN_Schwarz_Steady():
 
             # Compute current values u(x) with strongly enforced BCs
             if any(self.sdbc):
-                u = self.get_u_hat(x, self.model_r)
+                u = self.get_u_hat(x, model)
             else:
-                u = self.model_r(x)
+                u = model(x)
 
             # Store first derivative
             u_x = tape.gradient(u, x)
@@ -222,14 +233,20 @@ class PINN_Schwarz_Steady():
         u_xx = tape.gradient(u_x, x)
 
         del tape
+        return u_x, u_xx
+
+    def get_residual(self,model, x):
+
+        u_x, u_xx = self.get_gradients(model,x)
 
         return self.pde.f_r(u_x, u_xx)
+        
 
     # Enforce system and/or Schwarz boundaries strongly
     def loss_strong(self, x):
 
         # Compute phi_r
-        r = self.get_residual(x)
+        r = self.get_residual(self.model_r,x)
         phi_r = self.a * tf.reduce_mean(tf.square(r))
 
         # Initialize loss with residual loss function
@@ -255,7 +272,7 @@ class PINN_Schwarz_Steady():
                 phi_b += (1 - self.a) * tf.reduce_mean(tf.square( self.pde.f_b(b) - u_hat ))
 
 
-        # Check if only system boundaries are enforced
+        # Check if only Schwarz boundaries are enforced
         elif not self.sdbc[1]:
 
             # Calculate Schwarz boundary loss for current model if applicable
@@ -293,7 +310,7 @@ class PINN_Schwarz_Steady():
     def loss_weak(self, x):
 
         # Compute phi_r
-        r = self.get_residual(x)
+        r = self.get_residual(self.model_r,x)
         phi_r = self.a * tf.reduce_mean(tf.square(r))
 
         # Initialize loss with residual loss function
@@ -325,17 +342,94 @@ class PINN_Schwarz_Steady():
         loss += phi_b + phi_i + phi_s
 
         return loss, phi_r, phi_b, phi_i, phi_s
+    
+    def loss_weak_DN(self, x):
+        # this calculates the value of the loss function for Dirichlet-Neuman coupling with relaxation
+
+        # Compute phi_r
+        r = self.get_residual(self.model_r,x)
+        phi_r = self.a * tf.reduce_mean(tf.square(r))
+
+        # Initialize loss with residual loss function
+        loss = phi_r
+
+        phi_b = 0
+        phi_i = 0
+        boundary_point = 0
+
+        for i, model in enumerate(self.model_i):
+            boundary_point += 1
+            b = self.xb[i]
+
+            # Calculate boundary loss for current model if applicable
+            if not model:
+                u_pred = self.model_r(b)
+                phi_b += (1 - self.a) * tf.reduce_mean(tf.square(self.pde.f_b(b) - u_pred))
+            else:
+                if not self.sch_iter % 2 == 0:
+                    # odd iterations
+                    if boundary_point == 1:
+                        # calculate interface loss for current model if applicable at front interface
+                        # apply Neuman conditions on left
+                        du_pred1, _ = self.get_gradients(self.model_r,b)
+                        du_pred2, _ = self.get_gradients(model[0],b)
+                        phi_i += (1 - self.a) * tf.reduce_mean(tf.square(du_pred1 - du_pred2))
+                        # print("Neumann Boundary:")
+                        # print(b)
+                        # print(" model du pred:")
+                        # print(du_pred1[0])
+                        # print(" right model du pred:")
+                        # print(du_pred2[0])
+                    else:
+                        # Calculate interface loss for current model if applicable at back interface of subdomain
+                        # apply Dirichlet conditions
+                        u_pred1 = self.model_r(b)
+                        phi_i += (1 - self.a) * tf.reduce_mean(tf.square(u_pred1 - self.lamb_xb))
+                        # print("Dirich Boundary:")
+                        # print(b)
+                        # print("boundary point #:")
+                        # print(boundary_point)
+                        # print(" model u pred:")
+                        # print(u_pred1[0])
+                        # print("lambda at boundar ")
+                        # print(self.lamb_xb[0])
+                        # print("right model predic")
+                        # print(model[0](b)[0])
+                else:
+                    # even iteration
+                    if boundary_point == 1:
+                        # apply Dirichlet conditions
+                        u_pred1 = self.model_r(b)
+                        phi_i += (1 - self.a) * tf.reduce_mean(tf.square(u_pred1 - self.lamb_xb))
+                    else:
+                        # apply Neuman conditions
+                        du_pred1, _ = self.get_gradients(self.model_r,b)
+                        du_pred2, _ = self.get_gradients(model[0],b)
+                        phi_i += (1 - self.a) * tf.reduce_mean(tf.square(du_pred1 - du_pred2))
+                        
+        phi_s = 0
+        if self.snap:
+            # calculate snapshot data loss
+            phi_s = (1 - self.a) * tf.reduce_mean(tf.square( self.model_r(self.xs) - self.pde.f(self.xs) ))
+
+        # Add phi_b, phi_i, and phi_s to the loss
+        loss += phi_b + phi_i + phi_s
+
+        return loss, phi_r, phi_b, phi_i, phi_s
 
 
     @tf.function
-    def get_gradient(self, x):
+    def get_gradient_trainable(self, x):
         with tf.GradientTape(persistent=True) as tape:
             # This tape is for derivatives with respect to trainable variables
             tape.watch(self.model_r.trainable_variables)
-            if any(self.sdbc):
-                loss, _, _, _, _ = self.loss_strong(x)
+            if self.BC_mixing:
+                loss, _, _, _, _ = self.loss_weak_DN(x)
             else:
-                loss, _, _, _, _ = self.loss_weak(x)
+                if any(self.sdbc):
+                    loss, _, _, _, _ = self.loss_strong(x)
+                else:
+                    loss, _, _, _, _ = self.loss_weak(x)
 
         g = tape.gradient(loss, self.model_r.trainable_variables)
 
@@ -412,7 +506,7 @@ class PINN_Schwarz_Steady():
         @tf.function
         def train_step(x):
             # Retrieve loss gradient w.r.t. trainable variables
-            grad_theta = self.get_gradient(x)
+            grad_theta = self.get_gradient_trainable(x)
 
             # Perform gradient descent step
             optimizer.apply_gradients(zip(grad_theta, self.model_r.trainable_variables))
@@ -435,7 +529,10 @@ class PINN_Schwarz_Steady():
                 train_step(self.x)
 
             # Compute loss for full dataset to track training progress
-            if any(self.sdbc):
-                self.loss, self.phi_r, self.phi_b, self.phi_i, self.phi_s = self.loss_strong(self.x)
+            if self.BC_mixing:
+                self.loss, self.phi_r, self.phi_b, self.phi_i, self.phi_s = self.loss_weak_DN(self.x)
             else:
-                self.loss, self.phi_r, self.phi_b, self.phi_i, self.phi_s = self.loss_weak(self.x)
+                if any(self.sdbc):
+                    self.loss, self.phi_r, self.phi_b, self.phi_i, self.phi_s = self.loss_strong(self.x)
+                else:
+                    self.loss, self.phi_r, self.phi_b, self.phi_i, self.phi_s = self.loss_weak(self.x)

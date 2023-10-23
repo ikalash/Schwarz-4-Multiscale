@@ -19,8 +19,8 @@ import pandas as pd
 from matplotlib import pyplot as plt
 import yaml
 
-from pinnschwarz.pde import PDE_1D_Steady_AdvecDiff
-from pinnschwarz.pinn import PINN_Architecture, FD_1D_Steady, PINN_Schwarz_Steady
+from pde import PDE_1D_Steady_AdvecDiff
+from pinn import PINN_Architecture, FD_1D_Steady, PINN_Schwarz_Steady
 
 # Set data type
 DTYPE = 'float64'
@@ -134,17 +134,32 @@ def driver(parameter_file, outdir):
         domain_size =  1 / ( n_subdomains*(1 - percent_overlap) + percent_overlap )
         overlap = percent_overlap*domain_size
 
+        if percent_overlap == 0:
+            BC_mixing = True
+        else:
+            BC_mixing = False
+
         # Construct subdomain set
         sub = ()
         for i in range(n_subdomains):
             step = i*(domain_size - overlap)
             sub += ([step, step+domain_size],)
 
+
         # Truncate subdomain boundaries to 8 decimal precision
         sub = np.round(sub, 8)
 
         # Generate boundary points for each subdomain boundary
         X_b_om = [ [ tf.constant(np.tile([i], (N_b, 1)), dtype=DTYPE) for i in sub[j] ] for j in range(len(sub))]
+        lambda_xb = [ tf.constant(np.tile(0, (N_b, 1)), dtype=DTYPE) for _ in range(len(sub))]
+        # breakpoint()
+        # print("model 1 boundaries:")
+        # print(X_b_om[0])
+        # print("model 2 boundaries:")
+        # print(X_b_om[1])
+        # print("model 3 boundaries:")
+        # print(X_b_om[2])
+        # breakpoint()
 
         # Set random seed for reproducible results
         tf.random.set_seed(0)
@@ -204,12 +219,13 @@ def driver(parameter_file, outdir):
         x_schwarz = [tf.constant(np.linspace(s[0], s[1], num=n_FD), shape=(n_FD, 1), dtype=DTYPE) for s in sub]
         u_i_minus1 = [tf.constant(np.random.rand(n_FD,1), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
         u_i = [tf.constant(np.zeros((n_FD,1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
-
+        #breakpoint()
         # Initialize variables for plotting Schwarz results
         fig = plt.figure(layout='tight')
         fig.set_size_inches(6, 3)
         plt.xlabel('x', fontsize=14)
         plt.ylabel('u', fontsize=14)
+        plt.ylim([-.5, 1])
         ref, = plt.plot(x_true, u_true, 'k--')
         subdomain_plots = [plt.plot([], []) for _ in range(n_subdomains)]
 
@@ -229,22 +245,27 @@ def driver(parameter_file, outdir):
         # Record u_hat at each boundary to stack on each iteration
         u_gamma = np.zeros(sub.shape)
 
+        #Define lambda (the relaxed value of u) and theta for coupled BC case
+        #lambda_xb = tf.constant(np.zeros((n_subdomains,1)), shape=(n_subdomains, 1), dtype=DTYPE)
+        theta = 1
+
         # Main Schwarz loop
         while (schwarz_conv > schwarz_tol or ref_err > err_tol):
-
             # initialize error check variables to 0 as they are to be added to during sub-domain iteration
             schwarz_conv = 0
             ref_err = 0
 
             # Add to Schwarz iteration count
             iterCount += 1
-
+            # reset L_count, an index corresponding to the interface lambda is computed at
+            L_count = -1
             # Update title for Schwarz iter
             plt.title('Schwarz iteration {:d}; Pe = {:d}'.format(iterCount, Pe), fontsize=14)
 
             # loop over each model for training
             for s in range(len(model_om)):
-
+            #for s in range(len(model_om)):
+                
                 # Current model domain points
                 X_r = X_r_om[s]
                 # Current model boundary points
@@ -252,22 +273,51 @@ def driver(parameter_file, outdir):
 
                 # Current model
                 model_r = model_om[s]
-                # Adjacent models for interface conditions
+                # adjacent subdomain models
                 model_i = [model_om[s-1:s], model_om[s+1:s+2]]
 
-                # update the current models BCs according to adjacent models and save to model for SDBCs
-                if any(SDBC):
+                if not BC_mixing and any(SDBC):
                     if model_i[0]:
                         u_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s-1][:,0], u_i[s-1][:,0])
                     if model_i[1]:
                         u_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s+1][:,0], u_i[s+1][:,0])
                 model_r.u_gamma = u_gamma[s]
 
+                # update lambda for current subdomain for BC loss contribution of left point. only for non overlapping
+                if BC_mixing:
+                    if iterCount % 2 == 0 and model_i[0]:
+                        L_count += 1
+                        u_xb = model_i[0][0](X_b[0])
+                        lambda_xb[L_count] = theta * u_xb + (1 - theta) * lambda_xb[L_count]
+                    elif not iterCount % 2 == 0 and model_i[1]:
+                        L_count += 1
+                        u_xb = model_i[1][0](X_b[1])
+                        lambda_xb[L_count] = theta * u_xb + (1 - theta) * lambda_xb[L_count]
+                    # breakpoint()
+                # print(lambda_xb)
+
                 # Initialize solver
-                p = PINN_Schwarz_Steady(pde1, model_r, model_i, SDBC, X_r, X_b, alpha, snap)
+                p = PINN_Schwarz_Steady(pde1, model_r, model_i, SDBC, X_r, X_b, alpha, snap, lambda_xb[L_count], BC_mixing,iterCount)
 
                 # Solve model for current sub-domain
                 p.solve(tf.keras.optimizers.Adam(learning_rate=learn_rate), numEpochs)
+
+                if model_i[0]:
+                    print("left model prediction:")
+                    print(model_i[0][0](X_b[0])[0])
+                    print("current model prediction:")
+                    print(model_r(X_b[0])[0])
+                    print("at X point")
+                    print(X_b[0][0])
+                if model_i[1]:
+                    print("right model prediction:")
+                    print(model_i[1][0](X_b[1])[0])
+                    print("current model prediction:")
+                    print(model_r(X_b[1])[0])
+                    print("at X point")
+                    print(X_b[1][0])
+
+
 
                 MSE_tag = "MSE Sub-domain {:d}".format(s+1)
 
@@ -297,8 +347,10 @@ def driver(parameter_file, outdir):
                     ParameterSweep.loc[z, MSE_tag] = np.float64(p.loss)
 
                     if any(SDBC):
+                        # if either sys or Sch BC are strong compute u using get_u_hat which enforces SDBC
                         u_i[s] = p.get_u_hat(x_schwarz[s], model_r)
                     else:
+                        # if no strong BC then compute u using the NN, weak enforcement through loss fxn
                         u_i[s] = model_r(x_schwarz[s])
 
                     schwarz_conv += tf.math.reduce_euclidean_norm(u_i[s] - u_i_minus1[s])/tf.math.reduce_euclidean_norm(u_i[s])
