@@ -340,6 +340,13 @@ def driver(parameter_file, outdir):
         # Export final results to CSV
         ParameterSweep.to_csv(os.path.join(outdir, "ParamResults.csv"))
 
+        # write final solution and spatial points
+        for model_id in range(len(model_om)):
+            u_out = np.squeeze(u_i[model_id].numpy())
+            x_out = np.squeeze(x_schwarz[model_id].numpy())
+            np.save(os.path.join(figdir, f"u_{model_id}.npy"), u_out)
+            np.save(os.path.join(figdir, f"x_{model_id}.npy"), x_out)
+
         plt.close(fig)
 
 if __name__ == "__main__":
