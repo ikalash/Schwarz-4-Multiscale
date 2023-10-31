@@ -42,15 +42,15 @@ class Plotter():
         raise NotImplementedError
 
 class Driver():
-    def __init__(self, parameter_file, outdir, hyper_file, make_fig, percent_overlap, n_subdomains):
+    def __init__(self, parameter_file, outdir, hyper_file, make_fig, percent_overlap, n_subdomains, nl, hl):
         self.parameter_file = parameter_file
         self.outdir = outdir
         self.hyper_file = hyper_file
         self.make_fig = make_fig
         self.percent_overlap = percent_overlap
-        self.n_subdomains = n_subdomains
-        self.hl = 2
-        self.nl = 20
+        self.n_subdomains = int(n_subdomains)
+        self.hl = int(hl)
+        self.nl = int(nl)
         
     def train(self):
         
@@ -167,7 +167,7 @@ class Driver():
             np.random.seed(0)
     
             # Declare nu based on Peclet number
-            Pe = ParameterSweep.loc[z, 'Peclet Number']
+            Pe = 10
             nu = 1/Pe
             # Declare an instance of the PDE class
             pde1 = PDE_1D_Steady_AdvecDiff(nu=nu, order=order)
