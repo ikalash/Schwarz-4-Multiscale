@@ -32,18 +32,6 @@ class Logger():
         self.terminal.write(output)
         self.log.write(output)
         self.log.flush()
-    
-class Plotter():
-    # TODO: separate out plotting functionality. Deleted in this file
-    
-    def __init__(self):
-        self.plot = True
-    
-    def plot():
-        raise NotImplementedError
-    
-    def save():
-        raise NotImplementedError
 
 class Driver():
     def __init__(self, parameter_file, outdir, hyper_file, make_fig, percent_overlap, n_subdomains, nl, hl):
@@ -331,7 +319,7 @@ class Driver():
             # Export final results to CSV
             ParameterSweep.to_csv(os.path.join(self.outdir, "ParamResults.csv"))
             
-        return self.end - self.start
+        return (self.end - self.start), iterCount 
 
 if __name__ == "__main__":
     
@@ -350,5 +338,5 @@ if __name__ == "__main__":
 
 
     train_mod = Driver(parameter_file, outdir, hyper_file, False, percentage_overlap, n_subdomains)
-    cpu_time = train_mod.train()
+    cpu_time, iter = train_mod.train()
     print(cpu_time)
