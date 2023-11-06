@@ -7,6 +7,10 @@ from ray import tune
 import tensorflow as tf
 os.environ["KMP_AFFINITY"] = "noverbose"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+num_threads = 1
+tf.config.threading.set_inter_op_parallelism_threads(num_threads)
+tf.config.threading.set_intra_op_parallelism_threads(num_threads)
+tf.config.set_soft_device_placement(True)
 
 import numpy as np
 import pandas as pd
