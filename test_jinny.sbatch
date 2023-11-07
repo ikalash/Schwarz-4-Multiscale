@@ -2,8 +2,8 @@
 #SBATCH --job-name=schwarz
 #SBATCH --time=360:00
 #SBATCH -p normal
-#SBATCH --cpus-per-task=10
-#SBATCH --mem=16GB
+#SBATCH --cpus-per-task=20
+#SBATCH --mem=32GB
 #SBATCH -o /scratch/users/jinnyc/test/optimize/%j.out
 
 module load system
