@@ -20,8 +20,8 @@ def objective(config):
     return {"cpu": cpu_time, "iterations": n_iter}
 
 tuner = tune.Tuner(
-    tune.with_resources(objective, {"cpu": 2}),
-    param_space=search_space,
+    tune.with_resources(objective, {"cpu": 2, "memory": 160000000000}),
+    param_space=search_space
     )
 results = tuner.fit()
 

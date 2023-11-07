@@ -2,7 +2,7 @@
 #SBATCH --job-name=schwarz
 #SBATCH --time=360:00
 #SBATCH -p normal
-#SBATCH -c 2
+#SBATCH --cpus-per-task=2
 #SBATCH --mem=16GB
 #SBATCH -o /scratch/users/jinnyc/test/optimize/%j.out
 
