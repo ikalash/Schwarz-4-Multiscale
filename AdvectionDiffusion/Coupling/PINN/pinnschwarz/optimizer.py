@@ -8,14 +8,14 @@ search_space = {
 }
 
 def objective(config):
-    cpu_time = driver_ray.Driver(
+    cpu_time, n_iter = driver_ray.Driver(
         "/home/users/jinnyc/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/cases/example/input.csv",
         "/scratch/users/jinnyc/test/optimize",
         "/home/users/jinnyc/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/pinnschwarz/hyper.yaml",
         make_fig=False,
         hl=config['hl'],
         nl=config['nl']).train()
-    return {"cpu": cpu_time}
+    return {"cpu": cpu_time, "iterations": n_iter}
 
 tuner = tune.Tuner(objective, param_space=search_space)
 results = tuner.fit()
