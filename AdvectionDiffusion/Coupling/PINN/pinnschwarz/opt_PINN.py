@@ -19,7 +19,10 @@ def objective(config):
         nl=config['nl']).train()
     return {"cpu": cpu_time, "iterations": n_iter}
 
-tuner = tune.Tuner(objective, param_space=search_space)
+tuner = tune.Tuner(
+    tune.with_resources(objective, {"cpu": 2}),
+    param_space=search_space,
+    )
 results = tuner.fit()
 
 print(results.get_best_result(metric="cpu", mode="min").config)
