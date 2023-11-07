@@ -9,4 +9,4 @@
 module load system
 module load git
 module load python/3.9.0
-python3 $HOME/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/pinnschwarz/optimizer.py > /scratch/users/jinnyc/test/optimize/102223_run1.txt
+python3 $HOME/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/pinnschwarz/optimizer.py > /scratch/users/jinnyc/test/optimize/110623-1.txt
