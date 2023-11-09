@@ -4,8 +4,9 @@ import driver_schwarz
 search_space = {
     # enter param space
     "hl": tune.grid_search(range(2, 11)),
-    "nl": tune.grid_search(range(10, 85, 10))
+    "nl": tune.grid_search(range(10, 85, 10)),
 }
+
 
 def objective(config):
     cpu_time, n_iter = driver_schwarz.Driver(
@@ -15,15 +16,13 @@ def objective(config):
         make_fig=False,
         percent_overlap=0.10,
         n_subdomains=3,
-        hl=config['hl'],
-        nl=config['nl']).train()
+        hl=config["hl"],
+        nl=config["nl"],
+    ).train()
     return {"cpu": cpu_time, "iterations": n_iter}
 
-tuner = tune.Tuner(
-    tune.with_resources(objective, {"cpu": 20, "memory": 320000000000}),
-    param_space=search_space
-    )
+
+tuner = tune.Tuner(tune.with_resources(objective, {"cpu": 20, "memory": 320000000000}), param_space=search_space)
 results = tuner.fit()
 
 print(results.get_best_result(metric="cpu", mode="min").config)
-

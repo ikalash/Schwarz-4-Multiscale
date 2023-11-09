@@ -8,13 +8,14 @@ authors = [
 description = "PINN Schwarz coupling, originally developed by Will Snyder"
 readme = "README.md"
 
-requires-python = ">=3.6"
+requires-python = ">=3.9"
 dependencies = [
+    "tensorflow>=2.7",
     "numpy",
     "matplotlib",
     "pandas",
-    "tensorflow",
     "pyyaml",
+    "black",
 ]
 
 [build-system]
@@ -23,3 +24,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["pinnschwarz"]
+
+[tool.black]
+line-length = 120
+target-version = ['py39']
