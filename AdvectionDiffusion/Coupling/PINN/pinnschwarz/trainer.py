@@ -3,14 +3,8 @@ import os
 import sys
 
 import tensorflow as tf
-
-os.environ["KMP_AFFINITY"] = "noverbose"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-
 import numpy as np
-import pandas as pd
 from matplotlib import pyplot as plt
-import yaml
 
 from pinnschwarz.pde import PDE_1D_Steady_AdvecDiff
 from pinnschwarz.pinn import PINN_Architecture, FD_1D_Steady, PINN_Schwarz_Steady

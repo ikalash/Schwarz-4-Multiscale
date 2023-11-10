@@ -13,7 +13,6 @@ dependencies = [
     "tensorflow>=2.7",
     "numpy",
     "matplotlib",
-    "pandas",
     "ray[tune]",
     "pyyaml",
     "black",
