@@ -105,8 +105,7 @@ def trainer(params, outdir, make_figs=False):
     X_b_om = [[tf.constant(np.tile([i], (1, 1)), dtype=DTYPE) for i in sub[j]] for j in range(len(sub))]
 
     # Set random seed for reproducible results
-    tf.random.set_seed(0)
-    np.random.seed(0)
+    tf.keras.utils.set_random_seed(0)
 
     # Declare nu based on Peclet number
     nu = 1 / Pe

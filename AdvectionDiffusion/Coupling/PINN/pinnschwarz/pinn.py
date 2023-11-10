@@ -12,8 +12,8 @@ class PINN_Architecture(tf.keras.Model):
         num_neurons_per_layer=20,
         output_dim=1,
         activation=tf.keras.activations.swish,
-        kernel_initializer="glorot_normal",
-        bias_initializer=tf.keras.initializers.RandomNormal(mean=0.4, stddev=0.1, seed=42),
+        kernel_initializer=tf.keras.initializers.GlorotNormal(seed=0),
+        bias_initializer=tf.keras.initializers.RandomNormal(mean=0.4, stddev=0.1, seed=0),
         **kwargs,
     ):
         # Intialize superclass with its default parameter signature
