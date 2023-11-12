@@ -3,7 +3,7 @@ import driver_schwarz
 from ray.tune import TuneConfig
 
 config = TuneConfig(
-    max_concurrent_trials=10,
+    max_concurrent_trials=2,
 )
 
 search_space = {
