@@ -1,5 +1,10 @@
 from ray import tune
 import driver_schwarz
+from ray.tune import TuneConfig
+
+config = TuneConfig(
+    max_concurrent_trials=10,
+)
 
 search_space = {
     # enter param space
@@ -21,8 +26,10 @@ def objective(config):
     ).train()
     return {"cpu": cpu_time, "iterations": n_iter}
 
-
-tuner = tune.Tuner(tune.with_resources(objective, {"cpu": 20, "memory": 320000000000}), param_space=search_space)
+tuner = tune.Tuner(
+    tune.with_resources(objective, {"cpu": 2, "memory": 16*100000000}),
+    param_space=search_space
+    )
 results = tuner.fit()
 
 print(results.get_best_result(metric="cpu", mode="min").config)
