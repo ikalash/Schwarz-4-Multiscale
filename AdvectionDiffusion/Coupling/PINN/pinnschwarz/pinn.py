@@ -209,23 +209,24 @@ class PINN_Schwarz_Steady:
 
     @tf.function
     def get_residual(self, x):
-        with tf.GradientTape(persistent=True) as tape:
-            # Watch variable x during this GradientTape
-            tape.watch(x)
 
-            # Compute current values u(x) with strongly enforced BCs
-            if any(self.sdbc):
-                u = self.get_u_hat(x, self.model_r)
-            else:
-                u = self.model_r(x)
+        with tf.GradientTape() as tape2:
+            tape2.watch(x)
+            with tf.GradientTape() as tape1:
+                # Watch variable x during this GradientTape
+                tape1.watch(x)
 
-            # Store first derivative
-            u_x = tape.gradient(u, x)
+                # Compute current values u(x) with strongly enforced BCs
+                if any(self.sdbc):
+                    u = self.get_u_hat(x, self.model_r)
+                else:
+                    u = self.model_r(x)
+
+                # Store first derivative
+                u_x = tape1.gradient(u, x)
 
         # Store second derivative
-        u_xx = tape.gradient(u_x, x)
-
-        del tape
+        u_xx = tape2.gradient(u_x, x)
 
         return self.pde.f_r(u_x, u_xx)
 
@@ -321,7 +322,7 @@ class PINN_Schwarz_Steady:
 
     @tf.function
     def get_gradient(self, x):
-        with tf.GradientTape(persistent=True) as tape:
+        with tf.GradientTape() as tape:
             # This tape is for derivatives with respect to trainable variables
             tape.watch(self.model_r.trainable_variables)
             if any(self.sdbc):

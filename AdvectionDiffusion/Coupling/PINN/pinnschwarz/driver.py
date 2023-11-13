@@ -162,13 +162,20 @@ def launch_training(param_file, outdir):
             else:
                 grid_flag = False
             algo_obj = BasicVariantGenerator(constant_grid_search=grid_flag, random_state=0)
-        # elif algo == "hyperopt":
-        #     algo_obj = HyperOptSearch()
-        # elif algo == "bayes":
-        #     algo_obj = BayesOptSearch()
 
-        breakpoint()
+        elif algo == "hyperopt":
+            if "n_initial_points" in opt_dict:
+                n_initial_points = int(opt_dict["n_initial_points"])
+            else:
+                n_initial_points = 20
+            algo_obj = HyperOptSearch(n_initial_points=n_initial_points, random_state_seed=0)
 
+        elif algo == "bayes":
+            for param in param_space:
+                assert not isinstance(param, ray.tune.search.sample.Categorical), "Bayes does not permit discontinuous search spaces (choice)"
+            algo_obj = BayesOptSearch(random_state=0)
+
+        # fit and report best parameter
         tuner = tune.Tuner(
             tune.with_resources(objective, {"cpu": 1, "memory": mem_per_cpu}),
             tune_config=tune.TuneConfig(

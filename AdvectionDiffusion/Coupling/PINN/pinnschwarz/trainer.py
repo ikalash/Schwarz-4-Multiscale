@@ -1,7 +1,9 @@
 import time
 import os
 import sys
+import gc
 
+import psutil
 import tensorflow as tf
 import numpy as np
 from matplotlib import pyplot as plt
@@ -12,6 +14,11 @@ from pinnschwarz.pinn import PINN_Architecture, FD_1D_Steady, PINN_Schwarz_Stead
 # Set data type
 DTYPE = "float64"
 tf.keras.backend.set_floatx(DTYPE)
+
+def auto_garbage_collect(pct=80.0):
+    if psutil.virtual_memory().percent >= pct:
+        gc.collect()
+    return
 
 
 class Logger:
@@ -27,12 +34,12 @@ class Logger:
 
 def trainer(params, outdir, make_figs=False):
 
-    # pull parameters for brevity
-    n_colloc = params["n_colloc"]
-    domain_bounds = params["domain_bounds"]
-    percent_overlap = params["percent_overlap"]
-    n_subdomains = params["n_subdomains"]
-    Pe = params["peclet"]
+    # pull parameters for brevity, cast to proper type
+    n_colloc = int(params["n_colloc"])
+    domain_bounds = [float(param) for param in params["domain_bounds"]]
+    percent_overlap = float(params["percent_overlap"])
+    n_subdomains = int(params["n_subdomains"])
+    Pe = float(params["peclet"])
 
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
@@ -71,7 +78,7 @@ def trainer(params, outdir, make_figs=False):
 
     NN_label = "PINN"
     # number of snapshots per subdomain used to aid training, if using snapshots
-    if params["snap_loss"]:
+    if bool(params["snap_loss"]):
         NN_label = "NN"
         snap = 2**6
     else:
@@ -110,7 +117,7 @@ def trainer(params, outdir, make_figs=False):
     # Declare nu based on Peclet number
     nu = 1 / Pe
     # Declare an instance of the PDE class
-    pde1 = PDE_1D_Steady_AdvecDiff(nu=nu, order=params["order"])
+    pde1 = PDE_1D_Steady_AdvecDiff(nu=nu, order=int(params["order"]))
 
     # FOM value "true solution" to use as a reference
     x_true = tf.constant(np.linspace(domain_bounds[0], domain_bounds[1], num=n_colloc), shape=(n_colloc, 1), dtype=DTYPE)
@@ -133,7 +140,7 @@ def trainer(params, outdir, make_figs=False):
             temp = np.append(temp, sub[i])
             X_r_om += (tf.constant(temp, shape=(temp.shape[0], 1), dtype=DTYPE),)
 
-            model_om += (PINN_Architecture(xl=xl, xr=xr, num_hidden_layers=params["n_layers"], num_neurons_per_layer=params["n_neurons"]),)
+            model_om += (PINN_Architecture(xl=xl, xr=xr, num_hidden_layers=int(params["n_layers"]), num_neurons_per_layer=int(params["n_neurons"])),)
             model_om[i].build(input_shape=(None, X_r_om[i].shape[1]))
 
         else:
@@ -188,7 +195,7 @@ def trainer(params, outdir, make_figs=False):
     u_gamma = np.zeros(sub.shape)
 
     # Main Schwarz loop
-    while (schwarz_conv > params["schwarz_tol"]) or (ref_err > params["err_tol"]):
+    while (schwarz_conv > float(params["schwarz_tol"])) or (ref_err > float(params["err_tol"])):
         # initialize error check variables to 0 as they are to be added to during sub-domain iteration
         schwarz_conv = 0
         ref_err = 0
@@ -221,10 +228,10 @@ def trainer(params, outdir, make_figs=False):
             model_r.u_gamma = u_gamma[s]
 
             # Initialize solver
-            p = PINN_Schwarz_Steady(pde1, model_r, model_i, SDBC, X_r, X_b, params["alpha"], snap)
+            p = PINN_Schwarz_Steady(pde1, model_r, model_i, SDBC, X_r, X_b, float(params["alpha"]), snap)
 
             # Solve model for current sub-domain
-            p.solve(tf.keras.optimizers.Adam(learning_rate=params["learn_rate"]), params["n_epochs"])
+            p.solve(tf.keras.optimizers.Adam(learning_rate=float(params["learn_rate"])), int(params["n_epochs"]))
 
             # If current model is FD, output FD Error, update current iteration solution and convergence metrics
             if isinstance(model_r, FD_1D_Steady):
@@ -297,5 +304,8 @@ def trainer(params, outdir, make_figs=False):
 
     if make_figs:
         plt.close(fig)
+
+    # garbage collection
+    auto_garbage_collect(pct=45.0)
 
     return cpu_time, iterCount, ref_err
