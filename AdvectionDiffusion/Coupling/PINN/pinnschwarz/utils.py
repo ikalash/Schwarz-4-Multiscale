@@ -13,7 +13,7 @@ def get_resources():
 
     # node totals are the MAXIMUM
     avail_cpu = psutil.cpu_count()
-    avail_mem = psutil.virtual_memory()[0] / 1e6 # in MB since SLURM is in MB
+    avail_mem = psutil.virtual_memory()[0] / 1e6  # in MB since SLURM is in MB
 
     # check various environment variables
     avail_cpu = get_minenv("AVAIL_CPU", avail_cpu)

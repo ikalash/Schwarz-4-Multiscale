@@ -1,9 +1,7 @@
 import time
 import os
 import sys
-import gc
 
-import psutil
 import tensorflow as tf
 import numpy as np
 from matplotlib import pyplot as plt
@@ -14,11 +12,6 @@ from pinnschwarz.pinn import PINN_Architecture, FD_1D_Steady, PINN_Schwarz_Stead
 # Set data type
 DTYPE = "float64"
 tf.keras.backend.set_floatx(DTYPE)
-
-def auto_garbage_collect(pct=80.0):
-    if psutil.virtual_memory().percent >= pct:
-        gc.collect()
-    return
 
 
 class Logger:
@@ -33,7 +26,6 @@ class Logger:
 
 
 def trainer(params, outdir, make_figs=False):
-
     # pull parameters for brevity, cast to proper type
     n_colloc = int(params["n_colloc"])
     domain_bounds = [float(param) for param in params["domain_bounds"]]
@@ -120,7 +112,9 @@ def trainer(params, outdir, make_figs=False):
     pde1 = PDE_1D_Steady_AdvecDiff(nu=nu, order=int(params["order"]))
 
     # FOM value "true solution" to use as a reference
-    x_true = tf.constant(np.linspace(domain_bounds[0], domain_bounds[1], num=n_colloc), shape=(n_colloc, 1), dtype=DTYPE)
+    x_true = tf.constant(
+        np.linspace(domain_bounds[0], domain_bounds[1], num=n_colloc), shape=(n_colloc, 1), dtype=DTYPE
+    )
     u_true = pde1.f(x_true)
 
     # Set number of FD points and initialize the step size
@@ -140,7 +134,14 @@ def trainer(params, outdir, make_figs=False):
             temp = np.append(temp, sub[i])
             X_r_om += (tf.constant(temp, shape=(temp.shape[0], 1), dtype=DTYPE),)
 
-            model_om += (PINN_Architecture(xl=xl, xr=xr, num_hidden_layers=int(params["n_layers"]), num_neurons_per_layer=int(params["n_neurons"])),)
+            model_om += (
+                PINN_Architecture(
+                    xl=xl,
+                    xr=xr,
+                    num_hidden_layers=int(params["n_layers"]),
+                    num_neurons_per_layer=int(params["n_neurons"]),
+                ),
+            )
             model_om[i].build(input_shape=(None, X_r_om[i].shape[1]))
 
         else:
@@ -239,12 +240,12 @@ def trainer(params, outdir, make_figs=False):
                 print("\t" + "Finite Difference error = {:10.8e}".format(p.err))
 
                 u_i[s] = model_r(x_schwarz[s])
-                schwarz_conv += tf.math.reduce_euclidean_norm(
-                    u_i[s] - u_i_minus1[s]
-                ) / tf.math.reduce_euclidean_norm(u_i[s])
-                ref_err += tf.math.reduce_euclidean_norm(
-                    u_i[s] - pde1.f(x_schwarz[s])
-                ) / tf.math.reduce_euclidean_norm(pde1.f(x_schwarz[s]))
+                schwarz_conv += tf.math.reduce_euclidean_norm(u_i[s] - u_i_minus1[s]) / tf.math.reduce_euclidean_norm(
+                    u_i[s]
+                )
+                ref_err += tf.math.reduce_euclidean_norm(u_i[s] - pde1.f(x_schwarz[s])) / tf.math.reduce_euclidean_norm(
+                    pde1.f(x_schwarz[s])
+                )
 
             # If current model is NN output the model loss, update current iteration solution and convergence metrics
             else:
@@ -263,12 +264,12 @@ def trainer(params, outdir, make_figs=False):
                 else:
                     u_i[s] = model_r(x_schwarz[s])
 
-                schwarz_conv += tf.math.reduce_euclidean_norm(
-                    u_i[s] - u_i_minus1[s]
-                ) / tf.math.reduce_euclidean_norm(u_i[s])
-                ref_err += tf.math.reduce_euclidean_norm(
-                    u_i[s] - pde1.f(x_schwarz[s])
-                ) / tf.math.reduce_euclidean_norm(pde1.f(x_schwarz[s]))
+                schwarz_conv += tf.math.reduce_euclidean_norm(u_i[s] - u_i_minus1[s]) / tf.math.reduce_euclidean_norm(
+                    u_i[s]
+                )
+                ref_err += tf.math.reduce_euclidean_norm(u_i[s] - pde1.f(x_schwarz[s])) / tf.math.reduce_euclidean_norm(
+                    pde1.f(x_schwarz[s])
+                )
 
             # update frame for animation
             if make_figs:
@@ -304,8 +305,5 @@ def trainer(params, outdir, make_figs=False):
 
     if make_figs:
         plt.close(fig)
-
-    # garbage collection
-    auto_garbage_collect(pct=45.0)
 
     return cpu_time, iterCount, ref_err

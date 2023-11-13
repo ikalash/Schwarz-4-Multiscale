@@ -209,7 +209,6 @@ class PINN_Schwarz_Steady:
 
     @tf.function
     def get_residual(self, x):
-
         with tf.GradientTape() as tape2:
             tape2.watch(x)
             with tf.GradientTape() as tape1:

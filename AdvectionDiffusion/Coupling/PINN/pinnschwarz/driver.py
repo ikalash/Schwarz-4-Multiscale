@@ -1,8 +1,11 @@
 import argparse
+import gc
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 import yaml
+import tensorflow as tf
 import ray
 from ray import tune
 from ray.tune.search.basic_variant import BasicVariantGenerator
@@ -14,7 +17,6 @@ from pinnschwarz.utils import get_resources
 
 
 def parse_param(param_dict, param_str, can_opt=False, has_opt=False, default=None):
-
     if param_str in param_dict:
         param = param_dict[param_str]
 
@@ -62,7 +64,6 @@ def parse_param(param_dict, param_str, can_opt=False, has_opt=False, default=Non
 
 
 def append_param_space(param_space, param_dict, param_str, can_opt, has_opt, default=None):
-
     assert param_str not in param_space, f"Invalid double insertion of parameter {param_str} into parameter space"
 
     param_val = parse_param(param_dict, param_str, can_opt=can_opt, has_opt=has_opt, default=default)
@@ -72,7 +73,6 @@ def append_param_space(param_space, param_dict, param_str, can_opt, has_opt, def
 
 
 def parse_input(param_file):
-
     with open(param_file, "r") as file:
         param_dict = yaml.safe_load(file)
     param_space = {}
@@ -127,7 +127,6 @@ def parse_input(param_file):
 
 
 def launch_training(param_file, outdir):
-
     # check inputs
     assert os.path.isfile(param_file), f"Input file not found at {param_file}"
     if not os.path.isdir(outdir):
@@ -141,6 +140,7 @@ def launch_training(param_file, outdir):
 
     # optimizer run
     else:
+
         def objective(config):
             time, iters, err = trainer(config, outdir, make_figs=False)
             return {"time": time}
@@ -151,7 +151,7 @@ def launch_training(param_file, outdir):
         ray.init(
             include_dashboard=False,
             num_cpus=avail_cpu,
-            object_store_memory=0.3*avail_mem,
+            object_store_memory=0.3 * avail_mem,
         )
 
         # set up sampling algorithm
@@ -172,7 +172,9 @@ def launch_training(param_file, outdir):
 
         elif algo == "bayes":
             for param in param_space:
-                assert not isinstance(param, ray.tune.search.sample.Categorical), "Bayes does not permit discontinuous search spaces (choice)"
+                assert not isinstance(
+                    param, ray.tune.search.sample.Categorical
+                ), "Bayes does not permit discontinuous search spaces (choice)"
             algo_obj = BayesOptSearch(random_state=0)
 
         # fit and report best parameter
@@ -183,6 +185,7 @@ def launch_training(param_file, outdir):
                 num_samples=opt_dict["n_samples"],
                 metric="time",
                 mode="min",
+                reuse_actors=False,
             ),
             param_space=param_space,
         )
