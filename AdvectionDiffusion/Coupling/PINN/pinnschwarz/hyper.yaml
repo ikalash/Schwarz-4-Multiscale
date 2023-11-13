@@ -10,6 +10,10 @@ PDE:
   # Initialize list of points which lie on the system boundaries
   domain : [0, 1]
   beta : 1
+  System_BCs: strong
+  Schwarz_BCs: weak
+  Snapshots: False
+  FOM: None
 
 # Declare constant hyperparameters
 hyper:
@@ -20,9 +24,19 @@ hyper:
   learn_rate : 0.001
   schwarz_tol : 0.001
   err_tol : 0.005
+  Pe: 10
 
-NN_para:
-  # Set number of hidden layers and nodes per layer
-  hl : 2
-  nl : 20
-
+#Specify whether perform optimizer
+Optimizer:
+  use: True
+  search_algo: grid_search 
+  grid_search_space:
+    n_subdomains: [2, 3, 4, 5]
+    percentage_overlap: [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
+    nl: [20, 30, 40, 50, 60, 70, 80, 90, 100]
+    hl: [2, 3, 4, 5, 6, 7, 8, 9, 10]
+  default_space:
+    n_subdomains: 2
+    percentage_overlap: 0.2
+    nl: 20
+    hl: 2

@@ -2,7 +2,6 @@ import time
 import argparse
 import os
 import sys
-from ray import tune
 
 import tensorflow as tf
 os.environ["KMP_AFFINITY"] = "noverbose"
@@ -14,6 +13,9 @@ import yaml
 
 from pde import PDE_1D_Steady_AdvecDiff
 from pinn import PINN_Architecture, FD_1D_Steady, PINN_Schwarz_Steady
+
+#import optimizer
+import opt_schwarz 
 
 # Set data type
 DTYPE = 'float64'
@@ -42,8 +44,7 @@ class Plotter():
         raise NotImplementedError
 
 class Driver():
-    def __init__(self, parameter_file, outdir, hyper_file, make_fig, percent_overlap, n_subdomains, nl, hl):
-        self.parameter_file = parameter_file
+    def __init__(self, outdir, hyper_file, make_fig, percent_overlap, n_subdomains, nl, hl):
         self.outdir = outdir
         self.hyper_file = hyper_file
         self.make_fig = make_fig
@@ -69,8 +70,11 @@ class Driver():
     
         # Initialize list of points which lie on the system boundaries
         domain = hyper['PDE']['domain']
-    
         beta = hyper['PDE']['beta']
+        systembc = hyper['PDE']['System_BCs']
+        schwarzbc = hyper['PDE']['Schwarz_BCs']
+        snapshots = bool(hyper['PDE']["Snapshots"])
+        fom = hyper['PDE']['FOM']
     
         # Declare constant hyperparameters
         alpha = hyper['hyper']['alpha']
@@ -82,6 +86,7 @@ class Driver():
         # Set number of hidden layers and nodes per layer
         #hl = hyper['NN_para']['hl']
         #nl = hyper['NN_para']['nl']
+        Pe = int(hyper['hyper']['Pe'])
     
         # ----- END FIXED INPUTS -----
     
@@ -89,30 +94,30 @@ class Driver():
             os.mkdir(self.outdir)
     
         # Initialize dataframe for parameters and results storage
-        ParameterSweep = pd.read_csv(self.parameter_file)
+        #ParameterSweep = pd.read_csv(self.parameter_file)
     
         # parameter sweep loop
-        for z in range(len(ParameterSweep.index)):
-    
+        #Use 1 for now
+        for z in range(1):
+            
+            outdic = {}
             # Set percentage overlap
-            #percent_overlap = ParameterSweep.loc[z, 'Percent Overlap']
             percent_overlap = self.percent_overlap
     
             # Set the number of subdomains and the desired percentage overlap
-            #n_subdomains = ParameterSweep.loc[z, 'Sub-domains']
             n_subdomains = self.n_subdomains
     
             BC_label = '_WDBC'
             # Choose type of BC enforcement for system BCs (strong (1) or weak (0))
-            if ParameterSweep.loc[z, 'System BCs'] == 'weak':
+            if systembc == 'weak':
                 sysBC = 0
-            elif ParameterSweep.loc[z, 'System BCs'] == 'strong':
+            elif systembc == 'strong':
                 sysBC = 1
     
             # Choose type of BC enforcement for Schwarz BCs (strong (1) or weak (0))
-            if ParameterSweep.loc[z, 'Schwarz BCs'] == 'weak':
+            if schwarzbc == 'weak':
                 schBC = 0
-            elif ParameterSweep.loc[z, 'Schwarz BCs'] == 'strong':
+            elif schwarzbc == 'strong':
                 schBC = 1
     
             # assertion to catch SChwarz boundary enforcement when only domain is used
@@ -130,7 +135,7 @@ class Driver():
     
             NN_label = 'PINN'
             # number of snapshots per subdomain used to aid training, if using snapshots
-            if ParameterSweep.loc[z, 'Snapshots']:
+            if snapshots:
                 NN_label = 'NN'
                 snap = 2**6
             else:
@@ -139,10 +144,10 @@ class Driver():
             # Set subdomains for FOM modeling, if any
             FOM_label = ''
             sub_FOM = np.zeros((n_subdomains,))
-            if ParameterSweep.loc[z, 'FOM'] == 'left':
+            if fom == 'left':
                 sub_FOM[0] = 1
                 FOM_label = '_FOM_left'
-            elif ParameterSweep.loc[z, 'FOM'] == 'right':
+            elif fom == 'right':
                 sub_FOM[-1] = 1
                 FOM_label = '_FOM_right'
     
@@ -167,7 +172,7 @@ class Driver():
             np.random.seed(0)
     
             # Declare nu based on Peclet number
-            Pe = 10
+            #Pe = 10
             nu = 1/Pe
             # Declare an instance of the PDE class
             pde1 = PDE_1D_Steady_AdvecDiff(nu=nu, order=order)
@@ -273,8 +278,9 @@ class Driver():
                         print('Model {:d}: '.format(s+1))
                         print('\t'+'Finite Difference error = {:10.8e}'.format(p.err))
     
-                        ParameterSweep.loc[z, MSE_tag] = np.float64(p.err)
-    
+                        #ParameterSweep.loc[z, MSE_tag] = np.float64(p.err)
+                        outdic[MSE_tag] = np.float64(p.err)
+                        
                         u_i[s] = model_r(x_schwarz[s])
                         schwarz_conv += tf.math.reduce_euclidean_norm(u_i[s] - u_i_minus1[s])/tf.math.reduce_euclidean_norm(u_i[s])
                         ref_err += tf.math.reduce_euclidean_norm(u_i[s] - pde1.f(x_schwarz[s]))/tf.math.reduce_euclidean_norm(pde1.f(x_schwarz[s]))
@@ -291,7 +297,8 @@ class Driver():
                             print('\t'+'Snapshot loss = {:10.8e}'.format(p.phi_s))
                         print('\t'+'Total loss = {:10.8e}'.format(p.loss))
     
-                        ParameterSweep.loc[z, MSE_tag] = np.float64(p.loss)
+                        #ParameterSweep.loc[z, MSE_tag] = np.float64(p.loss)
+                        outdic[MSE_tag] = np.float64(p.err)
     
                         if any(SDBC):
                             u_i[s] = p.get_u_hat(x_schwarz[s], model_r)
@@ -320,31 +327,57 @@ class Driver():
             self.end = time.time()
     
             # Record results for coupled model
-            ParameterSweep.loc[z, 'CPU Time (s)'] = self.end - self.start
-            ParameterSweep.loc[z, 'Schwarz Iterations'] = iterCount
-            ParameterSweep.loc[z, 'Avg L2 Error'] = np.float64(ref_err)
+            outdic['CPU Time (s)'] = self.end - self.start
+            outdic['Schwarz Iterations'] = iterCount
+            outdic['Avg L2 Error'] = np.float64(ref_err)
     
             # Export final results to CSV
-            ParameterSweep.to_csv(os.path.join(self.outdir, "ParamResults.csv"))
+            df = pd.DataFrame.from_dict(outdic, orient='index')
+                
+            df.T.to_csv(os.path.join(self.outdir, "ParamResults.csv"))
             
         return self.end - self.start
 
+
 if __name__ == "__main__":
     
-    parameter_file = "/home/users/siqima/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/cases/example/input.csv"
-    outdir = "/scratch/users/siqima/test_optimizer"
-    hyper_file = "/home/users/siqima/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/pinnschwarz/hyper.yaml"
-    
-    """
-    parameter_file = "//Users/maguo/Desktop/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/cases/example/input.csv"
-    outdir = "/Users/maguo/Desktop/test_optimizer"
-    hyper_file = "/Users/maguo/Desktop/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/pinnschwarz/hyper.yaml"
-    """
-    
-    percentage_overlap = float(sys.argv[1])
-    n_subdomains = int(sys.argv[2])
+    parser = argparse.ArgumentParser(
+        prog='PINN-Schwarz',
+        description='Schwarz-based training of PINN-PINN coupling')
 
+    parser.add_argument('outdir')
+    parser.add_argument('yaml')
+    
+    args = parser.parse_args()
+    
+    with open(args.yaml, 'r') as file:
+        hyper = yaml.safe_load(file)
+    
+    use_optimizer = bool(hyper['Optimizer']["use"])
+    
+    def objective(config):
+        cpu_time = Driver(args.outdir, args.yaml, make_fig=False,
+                                 n_subdomains=config['n_subdomains'],
+                                 percent_overlap=config['percentage_overlap'],
+                                 nl=config['nl'],
+                                 hl=config['hl']).train()
+        return {"cpu": cpu_time}
+    
+    if use_optimizer:
+        search_algo = hyper['Optimizer']['search_algo']
+        if search_algo == "grid_search":
+            file = hyper['Optimizer']['grid_search_space']
+            keys = file.keys()
+            optimizer = opt_schwarz.Optimizer(file)
+            optimizer.grid_search(keys, objective)
+        else:
+            print("To be implemented here")
+    else:
+        n_subdomains = hyper['Optimizer']['default_space']['n_subdomains']
+        percentage_overlap = hyper['Optimizer']['default_space']['percentage_overlap']
+        nl = hyper['Optimizer']['default_space']['nl']
+        hl = hyper['Optimizer']['default_space']['hl']
+        train_mod = Driver(args.outdir, args.yaml, False, percentage_overlap, n_subdomains, nl, hl)
+        cpu_time = train_mod.train()
+        print(cpu_time)  
 
-    train_mod = Driver(parameter_file, outdir, hyper_file, False, percentage_overlap, n_subdomains)
-    cpu_time = train_mod.train()
-    print(cpu_time)
