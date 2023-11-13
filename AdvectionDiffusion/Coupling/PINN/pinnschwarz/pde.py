@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 
 
-tf.keras.backend.set_floatx('float64')
+tf.keras.backend.set_floatx("float64")
 
 
 class PDE_1D_Steady_AdvecDiff:
@@ -19,9 +19,9 @@ class PDE_1D_Steady_AdvecDiff:
 
         u = np.array([[0], [0]])
 
-        a = - nu/(h**2)
-        b = (2*nu)/(h**2)
-        c = -(nu/(h**2))
+        a = -nu / (h**2)
+        b = (2 * nu) / (h**2)
+        c = -(nu / (h**2))
 
         if order == 1:
             b += beta / h
@@ -37,11 +37,16 @@ class PDE_1D_Steady_AdvecDiff:
 
         self.coeff = (a, b, c, d)
 
-        self.A = np.diagflat([b]*(n_FD-2)) + np.diagflat([c]*(n_FD - 3), -1) + np.diagflat([a]*(n_FD - 3), 1) + np.diagflat([d] * (n_FD - 4), -2)
+        self.A = (
+            np.diagflat([b] * (n_FD - 2))
+            + np.diagflat([c] * (n_FD - 3), -1)
+            + np.diagflat([a] * (n_FD - 3), 1)
+            + np.diagflat([d] * (n_FD - 4), -2)
+        )
 
-        f = np.ones((n_FD-2, 1))
+        f = np.ones((n_FD - 2, 1))
 
-        u_int = np.linalg.solve( self.A, f )
+        u_int = np.linalg.solve(self.A, f)
 
         u = np.hstack((np.hstack((u[0], u_int.flatten())), u[-1]))
 
@@ -50,13 +55,12 @@ class PDE_1D_Steady_AdvecDiff:
 
     # Define boundary condition
     def f_b(self, x):
-        return tf.zeros((x.shape[0],1), dtype = 'float64')
+        return tf.zeros((x.shape[0], 1), dtype="float64")
 
     # Define residual of the PDE
     def f_r(self, u_x, u_xx):
-        return -self.nu*u_xx + self.beta*u_x - 1
+        return -self.nu * u_xx + self.beta * u_x - 1
 
     # Define analytical solution to PDE
     def f(self, x):
         return np.interp(x, self.x_FD, self.u_FD)
-

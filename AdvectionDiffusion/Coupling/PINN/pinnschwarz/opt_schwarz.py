@@ -80,5 +80,3 @@ class Optimizer():
         result = newtunner.fit()
         print(result.get_best_result(metric="cpu", mode="min").config)
     
-    
-    
