@@ -14,7 +14,10 @@ dependencies = [
     "numpy",
     "matplotlib",
     "ray[tune]",
+    "hyperopt",
+    "bayesian-optimization",
     "pyyaml",
+    "psutil",
     "black",
 ]
 

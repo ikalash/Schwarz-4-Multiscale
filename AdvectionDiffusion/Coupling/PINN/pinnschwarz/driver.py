@@ -3,9 +3,14 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import yaml
+import ray
 from ray import tune
+from ray.tune.search.basic_variant import BasicVariantGenerator
+from ray.tune.search.hyperopt import HyperOptSearch
+from ray.tune.search.bayesopt import BayesOptSearch
 
 from pinnschwarz.trainer import trainer
+from pinnschwarz.utils import get_resources
 
 
 def parse_param(param_dict, param_str, can_opt=False, has_opt=False, default=None):
@@ -76,6 +81,18 @@ def parse_input(param_file):
     if "optimizer" in param_dict.keys():
         opt = True
         opt_dict = param_dict["optimizer"]
+        # some error checking, update as necessary
+        try:
+            assert opt_dict["algo"] in ["random", "grid", "hyperopt", "bayes"]
+        except KeyError:
+            opt_dict["algo"] = "random"
+        except AssertionError:
+            print("Valid optimizer 'algo's: random, grid, hyperopt, bayes")
+            raise
+
+        if "n_samples" not in opt_dict:
+            opt_dict["n_samples"] = 100
+
     else:
         opt = False
         opt_dict = None
@@ -109,12 +126,6 @@ def parse_input(param_file):
     return opt_dict, param_space
 
 
-def ray_objective(config):
-
-    time, iters, err = trainer
-
-    return {"cpu": time}
-
 def launch_training(param_file, outdir):
 
     # check inputs
@@ -130,8 +141,46 @@ def launch_training(param_file, outdir):
 
     # optimizer run
     else:
-        pass
+        def objective(config):
+            time, iters, err = trainer(config, outdir, make_figs=False)
+            return {"time": time}
 
+        # establish available CPU/memory resources
+        avail_cpu, avail_mem = get_resources()
+        mem_per_cpu = avail_mem / avail_cpu
+        ray.init(
+            include_dashboard=False,
+            num_cpus=avail_cpu,
+            object_store_memory=0.3*avail_mem,
+        )
+
+        # set up sampling algorithm
+        algo = opt_dict["algo"]
+        if algo in ["random", "grid"]:
+            if algo == "grid":
+                grid_flag = True
+            else:
+                grid_flag = False
+            algo_obj = BasicVariantGenerator(constant_grid_search=grid_flag, random_state=0)
+        # elif algo == "hyperopt":
+        #     algo_obj = HyperOptSearch()
+        # elif algo == "bayes":
+        #     algo_obj = BayesOptSearch()
+
+        breakpoint()
+
+        tuner = tune.Tuner(
+            tune.with_resources(objective, {"cpu": 1, "memory": mem_per_cpu}),
+            tune_config=tune.TuneConfig(
+                search_alg=algo_obj,
+                num_samples=opt_dict["n_samples"],
+                metric="time",
+                mode="min",
+            ),
+            param_space=param_space,
+        )
+        results = tuner.fit()
+        print(results.get_best_result().config)
 
 
 if __name__ == "__main__":

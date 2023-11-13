@@ -197,7 +197,8 @@ def trainer(params, outdir, make_figs=False):
         iterCount += 1
 
         # Update title for Schwarz iter
-        plt.title("Schwarz iteration {:d}; Pe = {:f}".format(iterCount, Pe), fontsize=14)
+        if make_figs:
+            plt.title("Schwarz iteration {:d}; Pe = {:f}".format(iterCount, Pe), fontsize=14)
 
         # loop over each model for training
         for s in range(len(model_om)):
