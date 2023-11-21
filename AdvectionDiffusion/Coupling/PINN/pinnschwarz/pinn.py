@@ -244,7 +244,9 @@ class PINN_Schwarz_Steady:
         # Check if only system boundaries are enforced
         if not self.sdbc[0]:
             # Calculate system boundary loss for current model if applicable
-            for i, model in enumerate(self.model_i):
+            for i,model in enumerate(self.model_i):
+
+                # skip if has a neighboring subdomain
                 if model:
                     continue
 
@@ -257,7 +259,9 @@ class PINN_Schwarz_Steady:
         # Check if only system boundaries are enforced
         elif not self.sdbc[1]:
             # Calculate Schwarz boundary loss for current model if applicable
-            for i, model in enumerate(self.model_i):
+            for i,model in enumerate(self.model_i):
+
+                # skip if is physical boundary
                 if not model:
                     continue
 
@@ -302,12 +306,12 @@ class PINN_Schwarz_Steady:
             if not model:
                 u_pred = self.model_r(b)
                 phi_b += (1 - self.a) * tf.reduce_mean(tf.square(self.pde.f_b(b) - u_pred))
-                continue
 
-            # Calculate interface loss for current model if applicable
-            u_pred1 = self.model_r(b)
-            u_pred2 = model[0](b)
-            phi_i += (1 - self.a) * tf.reduce_mean(tf.square(u_pred1 - u_pred2))
+            else:
+                # Calculate interface loss for current model if applicable
+                u_pred1 = self.model_r(b)
+                u_pred2 = model[0](b)
+                phi_i += (1 - self.a) * tf.reduce_mean(tf.square(u_pred1 - u_pred2))
 
         phi_s = 0
         if self.snap:
