@@ -1,7 +1,6 @@
 import tensorflow as tf
 import numpy as np
 
-
 # A general class for constructing neural network architecture
 class PINN_Architecture(tf.keras.Model):
     def __init__(self, xl=0, xr=1,
@@ -22,6 +21,7 @@ class PINN_Architecture(tf.keras.Model):
 
         # Initialize storage for BCs according to adjacent models
         self.u_gamma = np.array([0, 0])
+        self.du_gamma = np.array([0, 0])
 
         # Store hyperparameters
         self.num_hidden_layers = num_hidden_layers
@@ -209,9 +209,35 @@ class PINN_Schwarz_Steady():
                 u_hat = u_hat + scale[i]*u_g
 
             return u_hat
+    
+    def get_u_hat_DN(self, x, model):
+
+    
+        bounds = [model.xl, model.xr]
+
+        # Scaling function to enforce NN outputs to 0 at all boundaries
+        v_x = tf.math.exp((x - bounds[0]) * (x - bounds[1])) - 1 - (x - bounds[0]) * (x - bounds[1])
+        breakpoint()
+        # scaling functions to smooth enforcement of Schwarz BCs
+        phi = phi_transform(bounds, x)
+        psi = psi_transform(bounds, x)
+
+        # # normalize v
+        # vm = tf.reduce_max(tf.abs(v))
+        # psim = tf.reduce_max(tf.abs(psi))
+        # v_normalized = v / vm * psim    
+        
+        # compute u_hat
+        if  not self.model_i[1]:
+            # in final subdomain, pure dirichlet
+            u_hat = self.get_u_hat(x, model)
+        else:
+            u_hat = v_x*model(x) + phi*model.u_gamma[0] + psi*model.du_gamma[1]
+
+        return u_hat
 
 
-    @tf.function
+    # @tf.function
 
     def get_gradients(self,model,x):
         # function to calculate the first and second derivative using graident tape 
@@ -222,7 +248,7 @@ class PINN_Schwarz_Steady():
 
             # Compute current values u(x) with strongly enforced BCs
             if any(self.sdbc):
-                u = self.get_u_hat(x, model)
+                u = self.get_u_hat_DN(x, model)
             else:
                 u = model(x)
 
@@ -374,27 +400,11 @@ class PINN_Schwarz_Steady():
                         du_pred1, _ = self.get_gradients(self.model_r,b)
                         du_pred2, _ = self.get_gradients(model[0],b)
                         phi_i += (1 - self.a) * tf.reduce_mean(tf.square(du_pred1 - du_pred2))
-                        # print("Neumann Boundary:")
-                        # print(b)
-                        # print(" model du pred:")
-                        # print(du_pred1[0])
-                        # print(" right model du pred:")
-                        # print(du_pred2[0])
                     else:
                         # Calculate interface loss for current model if applicable at back interface of subdomain
                         # apply Dirichlet conditions
                         u_pred1 = self.model_r(b)
                         phi_i += (1 - self.a) * tf.reduce_mean(tf.square(u_pred1 - self.lamb_xb))
-                        # print("Dirich Boundary:")
-                        # print(b)
-                        # print("boundary point #:")
-                        # print(boundary_point)
-                        # print(" model u pred:")
-                        # print(u_pred1[0])
-                        # print("lambda at boundar ")
-                        # print(self.lamb_xb[0])
-                        # print("right model predic")
-                        # print(model[0](b)[0])
                 else:
                     # even iteration
                     if boundary_point == 1:
@@ -418,7 +428,46 @@ class PINN_Schwarz_Steady():
         return loss, phi_r, phi_b, phi_i, phi_s
 
 
-    @tf.function
+    def loss_weak_Robin(self, x):
+
+        # Compute phi_r
+        r = self.get_residual(self.model_r,x)
+        phi_r = self.a * tf.reduce_mean(tf.square(r))
+
+        # Initialize loss with residual loss function
+        loss = phi_r
+
+        phi_b = 0
+        phi_i = 0
+        for i, model in enumerate(self.model_i):
+
+            b = self.xb[i]
+
+            # Calculate boundary loss for current model if applicable
+            if not model:
+                u_pred = self.model_r(b)
+                phi_b += (1 - self.a) * tf.reduce_mean(tf.square(self.pde.f_b(b) - u_pred))
+
+            else:
+                # Calculate interface loss for current model if applicable
+                L = 1000
+                du_pred1, _ = self.get_gradients(self.model_r,b)
+                du_pred2, _ = self.get_gradients(model[0],b)
+                u_pred1 = self.model_r(b)
+                u_pred2 = model[0](b)
+                phi_i += (1 - self.a) * tf.reduce_mean(tf.square((L*u_pred1 + du_pred1) - (L*u_pred2 + du_pred2)))
+
+        phi_s = 0
+        if self.snap:
+            # calculate snapshot data loss
+            phi_s = (1 - self.a) * tf.reduce_mean(tf.square( self.model_r(self.xs) - self.pde.f(self.xs) ))
+
+        # Add phi_b, phi_i, and phi_s to the loss
+        loss += phi_b + phi_i + phi_s
+
+        return loss, phi_r, phi_b, phi_i, phi_s
+
+    # @tf.function
     def get_gradient_trainable(self, x):
         with tf.GradientTape(persistent=True) as tape:
             # This tape is for derivatives with respect to trainable variables
@@ -536,3 +585,40 @@ class PINN_Schwarz_Steady():
                     self.loss, self.phi_r, self.phi_b, self.phi_i, self.phi_s = self.loss_strong(self.x)
                 else:
                     self.loss, self.phi_r, self.phi_b, self.phi_i, self.phi_s = self.loss_weak(self.x)
+
+    # helper functions
+
+def phi_transform(bounds,x):
+     # this function computes the coefficients a1-a5 for the phi transformation function to strongly enforce Dirichlet-Neuman BC
+     # input is the domain bounds in a single list and the output is coeffs a1-a5 in a single list
+
+    # set gamma_i and gamma_i+1
+    gi = bounds[0]
+    gip1 = bounds[1]
+
+    a1 = -1/2*(3*gi*gip1**2 + gi**3 + 2 - 3*gip1*gi**2 - gip1**3) / (gi**4 + 2*gi*gip1**3 - gip1**4 - 2*gip1*gi**3)
+    a2 = 1
+    a3 = -1/2*(gi**5 + gip1*gi**4 - 8*gip1**2*gi**3 + 8*gi**2*gip1**3 - 4*gi**2 - gi*gip1**4 - 4*gi*gip1 - gip1**5 - 4*gip1**2) / (gi**4 + 2*gi*gip1**3 - gip1**4 - 2*gip1*gi**3)
+    a4 = (gi**3 - 3*gip1*gi**2 + 3*gi*gip1**2 - 4 - gip1**3) * gi*gip1 / (gi**3 - 3*gip1*gi**2 + 3*gi*gip1**2 - gip1**3)
+    a5 = -1/2*gip1**2*(3*gip1**2*gi**3 + 2*gip1**2 - gi**2*gip1**3 - 3*gip1*gi**4 + gi**5 - 4*gi**2 - 4*gi*gip1) / (gi**4 + 2*gi*gip1**3 - gip1**4 - 2*gip1*gi**3);
+    
+    phi = a1*(x**4) + a2*(x**3) + a3*(x**2) + a4*x + a5
+
+    return phi
+
+def psi_transform(bounds,x):
+    # this fxn computes the value of the psi transform function for a specific x value
+    
+    # set gamma_i and gamma_i+1
+    gi = bounds[0]
+    gip1 = bounds[1]
+
+    b1 = -1/2*(gi**2 - 2*gip1*gi - 1 + gip1**2) / (gi**3 - gip1*gi**2 - gi*gip1**2 + gip1**3)
+    b2 = 1
+    b3 = -1/2*(gi**4 + 2*gip1*gi**3 + 3*gi**2 - 6*gi**2*gip1**2 + 2*gi*gip1**3 + 2*gip1*gi + gip1**4 + gip1**2) / (gi**3 - gip1*gi**2 - gi*gip1**2 +gip1**3)
+    b4 = (gip1*gi**2 - 2*gi*gip1**2 + gi + gip1 + gip1**3)*gi / (gip1**2 - 2*gip1*gi + gi**2)
+    b5 = -1/2*gip1*gi**2*(gip1*gi**2 - 2*gi*gip1**2 + 2*gi + gip1**3 +gip1) / (gi**3 - gip1*gi**2 - gi*gip1**2 + gip1**3) 
+    
+    psi = b1*(x**4) + b2*(x**3) + b3*(x**2) + b4*x + b5
+    
+    return psi

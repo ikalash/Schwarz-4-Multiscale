@@ -219,6 +219,7 @@ def driver(parameter_file, outdir):
         x_schwarz = [tf.constant(np.linspace(s[0], s[1], num=n_FD), shape=(n_FD, 1), dtype=DTYPE) for s in sub]
         u_i_minus1 = [tf.constant(np.random.rand(n_FD,1), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
         u_i = [tf.constant(np.zeros((n_FD,1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
+        du_i = [tf.constant(np.zeros((n_FD,1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
         #breakpoint()
         # Initialize variables for plotting Schwarz results
         fig = plt.figure(layout='tight')
@@ -244,6 +245,7 @@ def driver(parameter_file, outdir):
 
         # Record u_hat at each boundary to stack on each iteration
         u_gamma = np.zeros(sub.shape)
+        du_gamma = np.zeros(sub.shape)
 
         #Define lambda (the relaxed value of u) and theta for coupled BC case
         #lambda_xb = tf.constant(np.zeros((n_subdomains,1)), shape=(n_subdomains, 1), dtype=DTYPE)
@@ -276,12 +278,24 @@ def driver(parameter_file, outdir):
                 # adjacent subdomain models
                 model_i = [model_om[s-1:s], model_om[s+1:s+2]]
 
-                if not BC_mixing and any(SDBC):
-                    if model_i[0]:
-                        u_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s-1][:,0], u_i[s-1][:,0])
-                    if model_i[1]:
-                        u_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s+1][:,0], u_i[s+1][:,0])
+                if any(SDBC):
+                    if not BC_mixing:
+                        if model_i[0]:
+                            u_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s-1][:,0], u_i[s-1][:,0])
+                            du_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s-1][:,0], du_i[s-1][:,0])
+                        if model_i[1]:
+                            u_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s+1][:,0], u_i[s+1][:,0])
+                            du_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s+1][:,0], du_i[s+1][:,0])
+                    else:
+                        if model_i[0]:
+                            u_gamma[s][0] = u_i[s-1][-1,0]
+                            du_gamma[s][0] =  du_i[s-1][-1,0]
+                        if model_i[1]:
+                            u_gamma[s][1] = u_i[s+1][0,0]
+                            du_gamma[s][1] = du_i[s+1][0,0]
                 model_r.u_gamma = u_gamma[s]
+                model_r.du_gamma = du_gamma[s]
+                # breakpoint()
 
                 # update lambda for current subdomain for BC loss contribution of left point. only for non overlapping
                 if BC_mixing:
@@ -352,6 +366,8 @@ def driver(parameter_file, outdir):
                     else:
                         # if no strong BC then compute u using the NN, weak enforcement through loss fxn
                         u_i[s] = model_r(x_schwarz[s])
+
+                    du_i[s], _ = p.get_gradients(model_r, x_schwarz[s])
 
                     schwarz_conv += tf.math.reduce_euclidean_norm(u_i[s] - u_i_minus1[s])/tf.math.reduce_euclidean_norm(u_i[s])
                     ref_err += tf.math.reduce_euclidean_norm(u_i[s] - pde1.f(x_schwarz[s]))/tf.math.reduce_euclidean_norm(pde1.f(x_schwarz[s]))
