@@ -136,7 +136,7 @@ def launch_training(param_file, outdir):
 
     # single run
     if opt_dict is None:
-        time, iters, err = trainer(param_space, outdir)
+        time, iters, err = trainer(param_space, outdir, make_figs=True)
 
     # optimizer run
     else:

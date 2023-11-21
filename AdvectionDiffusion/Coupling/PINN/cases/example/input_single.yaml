@@ -1,0 +1,23 @@
+pde:
+  order: 2
+  n_colloc: 1000
+  domain_bounds: [0.0, 1.0]
+  beta: 1.0
+  peclet: 10.0
+
+schwarz:
+  n_subdomains: 3
+  percent_overlap: 0.1
+  sys_bcs: "weak"
+  sch_bcs: "weak"
+  snap_loss: True
+  schwarz_tol: 0.001
+  err_tol: 0.005
+
+nn:
+  alpha: 0.2
+  n_epochs: 1000
+  learn_rate: 0.001
+  n_layers: 2
+  n_neurons: 20
+
