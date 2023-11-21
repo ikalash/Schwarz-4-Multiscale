@@ -1,11 +1,9 @@
 import argparse
-import gc
 import os
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 import yaml
-import tensorflow as tf
 import ray
 from ray import tune
 from ray.tune.search.basic_variant import BasicVariantGenerator
@@ -171,10 +169,9 @@ def launch_training(param_file, outdir):
             algo_obj = HyperOptSearch(n_initial_points=n_initial_points, random_state_seed=0)
 
         elif algo == "bayes":
-            for param in param_space:
-                assert not isinstance(
-                    param, ray.tune.search.sample.Categorical
-                ), "Bayes does not permit discontinuous search spaces (choice)"
+            for _, param in param_space.items():
+                if issubclass(type(param), ray.tune.search.sample.Domain):
+                    assert isinstance(param.sampler, ray.tune.search.sample.Float._Uniform), "Bayes only permits `uniform` search spaces"
             algo_obj = BayesOptSearch(random_state=0)
 
         # fit and report best parameter
