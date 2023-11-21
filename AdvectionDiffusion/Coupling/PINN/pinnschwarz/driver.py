@@ -1,355 +1,200 @@
-import time
 import argparse
 import os
-import sys
 
-import tensorflow as tf
-# num_threads = 1
-# os.environ["OMP_NUM_THREADS"] = str(num_threads)
-# os.environ["TF_NUM_INTRAOP_THREADS"] = str(num_threads)
-# os.environ["TF_NUM_INTEROP_THREADS"] = str(num_threads)
-# tf.config.threading.set_inter_op_parallelism_threads(num_threads)
-# tf.config.threading.set_intra_op_parallelism_threads(num_threads)
-# tf.config.set_soft_device_placement(True)
-os.environ["KMP_AFFINITY"] = "noverbose"
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-import numpy as np
-import pandas as pd
-from matplotlib import pyplot as plt
 import yaml
+import ray
+from ray import tune
+from ray.tune.search.basic_variant import BasicVariantGenerator
+from ray.tune.search.hyperopt import HyperOptSearch
+from ray.tune.search.bayesopt import BayesOptSearch
 
-from pinnschwarz.pde import PDE_1D_Steady_AdvecDiff
-from pinnschwarz.pinn import PINN_Architecture, FD_1D_Steady, PINN_Schwarz_Steady
-
-# Set data type
-DTYPE = 'float64'
-tf.keras.backend.set_floatx(DTYPE)
-
-
-# ----- START INPUTS FROM YAML -----
-with open('hyper.yaml', 'r') as file:
-    hyper = yaml.safe_load(file)
-
-# Initialize order parameter for PDE
-order = hyper['PDE']['order']
-
-# number of internal collocation points
-N = 2**int(hyper['PDE']['power'])
-# number of boundary and interface points
-N_b = 2**int(hyper['PDE']['b_power'])
+from pinnschwarz.trainer import trainer
+from pinnschwarz.utils import get_resources
 
 
-# Initialize list of points which lie on the system boundaries
-domain = hyper['PDE']['domain']
+def parse_param(param_dict, param_str, can_opt=False, has_opt=False, default=None):
+    if param_str in param_dict:
+        param = param_dict[param_str]
 
-beta = hyper['PDE']['beta']
+        # define search space for parameter
+        if isinstance(param, dict):
+            assert can_opt and has_opt, f"Must set optimizer params if setting search space for parameter: {param_str}"
 
-# Declare constant hyperparameters
-alpha = hyper['hyper']['alpha']
-numEpochs = 2**int(hyper['hyper']['epochs_power'])
-learn_rate = hyper['hyper']['learn_rate']
-schwarz_tol = hyper['hyper']['schwarz_tol']
-err_tol = hyper['hyper']['err_tol']
+            try:
+                space_type = str(param["space_type"])
+                space_defs = list(param["space_defs"])
+            except KeyError:
+                print(f"Must define a 'space_type' and 'space_defs' for optimized parameter {param_str}")
+                raise
 
-# Set number of hidden layers and nodes per layer
-hl = hyper['NN_para']['hl']
-nl = hyper['NN_para']['nl']
+            # expand these as necessary
+            if space_type == "uniform":
+                param_out = tune.uniform(space_defs[0], space_defs[1])
+            elif space_type == "quniform":
+                param_out = tune.quniform(space_defs[0], space_defs[1], space_defs[2])
+            elif space_type == "randn":
+                param_out = tune.randn(space_defs[0], space_defs[1])
+            elif space_type == "randint":
+                param_out = tune.randint(space_defs[0], space_defs[1])
+            elif space_type == "choice":
+                param_out = tune.choice(space_defs)
+            elif space_type == "grid":
+                param_out = tune.grid_search(space_defs)
+            else:
+                raise ValueError(f"Invalid 'space_type' for parameter {param_str}: {space_type}")
 
-# ----- END FIXED INPUTS -----
+        # single-value input
+        else:
+            param_out = param
+            if default is not None:
+                assert isinstance(param_out, type(default))
 
-class Logger():
-    def __init__(self, logfile):
-        self.terminal = sys.stdout
-        self.log = open(logfile, "w")
+    # fall back to default, if provided
+    elif default is not None:
+        param_out = default
 
-    def write(self, output):
-        self.terminal.write(output)
-        self.log.write(output)
-        self.log.flush()
+    else:
+        raise ValueError(f"No input or default value for parameter: {param_str}")
+
+    return param_out
 
 
-def driver(parameter_file, outdir):
+def append_param_space(param_space, param_dict, param_str, can_opt, has_opt, default=None):
+    assert param_str not in param_space, f"Invalid double insertion of parameter {param_str} into parameter space"
 
+    param_val = parse_param(param_dict, param_str, can_opt=can_opt, has_opt=has_opt, default=default)
+    param_space[param_str] = param_val
+
+    return param_space
+
+
+def parse_input(param_file):
+    with open(param_file, "r") as file:
+        param_dict = yaml.safe_load(file)
+    param_space = {}
+
+    # optimization parameters
+    if "optimizer" in param_dict.keys():
+        opt = True
+        opt_dict = param_dict["optimizer"]
+        # some error checking, update as necessary
+        try:
+            assert opt_dict["algo"] in ["random", "grid", "hyperopt", "bayes"]
+        except KeyError:
+            opt_dict["algo"] = "random"
+        except AssertionError:
+            print("Valid optimizer 'algo's: random, grid, hyperopt, bayes")
+            raise
+
+        if "n_samples" not in opt_dict:
+            opt_dict["n_samples"] = 100
+
+    else:
+        opt = False
+        opt_dict = None
+
+    # PDE parameters
+    pde_dict = param_dict["pde"]
+    param_space = append_param_space(param_space, pde_dict, "order", False, opt, default=2)
+    param_space = append_param_space(param_space, pde_dict, "n_colloc", False, opt, default=1000)
+    param_space = append_param_space(param_space, pde_dict, "domain_bounds", False, opt, default=[0.0, 1.0])
+    param_space = append_param_space(param_space, pde_dict, "beta", False, opt, default=1.0)
+    param_space = append_param_space(param_space, pde_dict, "peclet", opt, False)
+
+    # Schwarz parameters
+    schwarz_dict = param_dict["schwarz"]
+    param_space = append_param_space(param_space, schwarz_dict, "n_subdomains", True, opt)
+    param_space = append_param_space(param_space, schwarz_dict, "percent_overlap", True, opt)
+    param_space = append_param_space(param_space, schwarz_dict, "sys_bcs", True, opt)
+    param_space = append_param_space(param_space, schwarz_dict, "sch_bcs", True, opt)
+    param_space = append_param_space(param_space, schwarz_dict, "snap_loss", True, opt)
+    param_space = append_param_space(param_space, schwarz_dict, "schwarz_tol", False, opt, 0.001)
+    param_space = append_param_space(param_space, schwarz_dict, "err_tol", False, opt, 0.005)
+
+    # neural network parameters
+    nn_dict = param_dict["nn"]
+    param_space = append_param_space(param_space, nn_dict, "alpha", True, opt, 0.2)
+    param_space = append_param_space(param_space, nn_dict, "n_epochs", True, opt, 1000)
+    param_space = append_param_space(param_space, nn_dict, "learn_rate", True, opt, 0.001)
+    param_space = append_param_space(param_space, nn_dict, "n_layers", True, opt, 2)
+    param_space = append_param_space(param_space, nn_dict, "n_neurons", True, opt, 20)
+
+    return opt_dict, param_space
+
+
+def launch_training(param_file, outdir):
+    # check inputs
+    assert os.path.isfile(param_file), f"Input file not found at {param_file}"
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
 
-    # Initialize dataframe for parameters and results storage
-    ParameterSweep = pd.read_csv(parameter_file)
+    opt_dict, param_space = parse_input(param_file)
 
-    # parameter sweep loop
-    for z in range(len(ParameterSweep.index)):
+    # single run
+    if opt_dict is None:
+        time, iters, err = trainer(param_space, outdir, make_figs=True)
 
-        # Set percentage overlap
-        percent_overlap = ParameterSweep.loc[z, 'Percent Overlap']
+    # optimizer run
+    else:
 
-        # Set the number of subdomains and the desired percentage overlap
-        n_subdomains = ParameterSweep.loc[z, 'Sub-domains']
+        def objective(config):
+            time, iters, err = trainer(config, outdir, make_figs=False)
+            return {"time": time}
 
-        BC_label = '_WDBC'
-        # Choose type of BC enforcement for system BCs (strong (1) or weak (0))
-        if ParameterSweep.loc[z, 'System BCs'] == 'weak':
-            sysBC = 0
-        elif ParameterSweep.loc[z, 'System BCs'] == 'strong':
-            sysBC = 1
-
-        # Choose type of BC enforcement for Schwarz BCs (strong (1) or weak (0))
-        if ParameterSweep.loc[z, 'Schwarz BCs'] == 'weak':
-            schBC = 0
-        elif ParameterSweep.loc[z, 'Schwarz BCs'] == 'strong':
-            schBC = 1
-
-        # assertion to catch SChwarz boundary enforcement when only domain is used
-        if schBC:
-            assert n_subdomains > 1, "Schwarz boundaries cannot be strongly enforced because you are using a single-domain model which has no Schwarz boundaries."
-
-        # Store BC enforcement booleans together
-        SDBC = [sysBC, schBC]
-        if all(SDBC):
-            BC_label = '_SDBC_both'
-        elif SDBC[0]:
-            BC_label = '_SDBC_sys'
-        elif SDBC[1]:
-            BC_label = '_SDBC_schwarz'
-
-        NN_label = 'PINN'
-        # number of snapshots per subdomain used to aid training, if using snapshots
-        if ParameterSweep.loc[z, 'Snapshots']:
-            NN_label = 'NN'
-            snap = 2**6
-        else:
-            snap=0
-
-        # Set subdomains for FOM modeling, if any
-        FOM_label = ''
-        sub_FOM = np.zeros((n_subdomains,))
-        if ParameterSweep.loc[z, 'FOM'] == 'left':
-            sub_FOM[0] = 1
-            FOM_label = '_FOM_left'
-        elif ParameterSweep.loc[z, 'FOM'] == 'right':
-            sub_FOM[-1] = 1
-            FOM_label = '_FOM_right'
-
-        # Calculate the size of subdomains and overlap to achieve the parameters defined above
-        domain_size =  1 / ( n_subdomains*(1 - percent_overlap) + percent_overlap )
-        overlap = percent_overlap*domain_size
-
-        # Construct subdomain set
-        sub = ()
-        for i in range(n_subdomains):
-            step = i*(domain_size - overlap)
-            sub += ([step, step+domain_size],)
-
-        # Truncate subdomain boundaries to 8 decimal precision
-        sub = np.round(sub, 8)
-
-        # Generate boundary points for each subdomain boundary
-        X_b_om = [ [ tf.constant(np.tile([i], (N_b, 1)), dtype=DTYPE) for i in sub[j] ] for j in range(len(sub))]
-
-        # Set random seed for reproducible results
-        tf.random.set_seed(0)
-        np.random.seed(0)
-
-        # Declare nu based on Peclet number
-        Pe = ParameterSweep.loc[z, 'Peclet Number']
-        nu = 1/Pe
-        # Declare an instance of the PDE class
-        pde1 = PDE_1D_Steady_AdvecDiff(nu=nu, order=order)
-
-        # FOM value "true solution" to use as a reference
-        x_true = tf.constant(np.linspace(domain[0], domain[1], num=N), shape=(N, 1), dtype=DTYPE)
-        u_true = pde1.f(x_true)
-
-        # Set number of FD points and initialize the step size
-        n_FD = int(N/2)
-
-        # Initialize tuple to store internal points and models in each subdomain
-        X_r_om = ()
-        model_om = ()
-
-        # Build and store neural networks for applicable subdomains; Store FD class for FOM sub-domains
-        for i in range(sub.shape[0]):
-
-            # If subdomain is to be modeled by NN, add random uniform points to subdomain, include sub-domain bounds
-            if not sub_FOM[i]:
-                xl = sub[i][0]
-                xr = sub[i][1]
-                temp = np.random.uniform(low=xl, high=xr, size=(N,))
-                temp = np.append(temp, sub[i])
-                X_r_om += ( tf.constant(temp, shape=(temp.shape[0],1), dtype=DTYPE), )
-
-                model_om += ( PINN_Architecture(xl=xl, xr=xr, num_hidden_layers=hl, num_neurons_per_layer=nl), )
-                model_om[i].build(input_shape=(None, X_r_om[i].shape[1]))
-
-            else:
-
-                # If subdomain is to be modeled by FD, construct uniform line space for FD on subdomain
-                xl = sub[i][0]
-                xr = sub[i][1]
-                x_FD = np.linspace(xl, xr, num=n_FD)
-
-                # Add line space for subdomain to internal point storage
-                X_r_om += ( tf.constant(x_FD, shape=(x_FD.shape[0],1), dtype=DTYPE), )
-
-                model = FD_1D_Steady(x_FD, domain, pde1)
-
-                model_om += ( model, )
-
-
-        # Initialize schwarz loop operators
-        schwarz_conv = 1
-        ref_err = 1
-        iterCount = 0
-        np.random.seed(0)
-        x_schwarz = [tf.constant(np.linspace(s[0], s[1], num=n_FD), shape=(n_FD, 1), dtype=DTYPE) for s in sub]
-        u_i_minus1 = [tf.constant(np.random.rand(n_FD,1), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
-        u_i = [tf.constant(np.zeros((n_FD,1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
-
-        # Initialize variables for plotting Schwarz results
-        fig = plt.figure(layout='tight')
-        fig.set_size_inches(6, 3)
-        plt.xlabel('x', fontsize=14)
-        plt.ylabel('u', fontsize=14)
-        ref, = plt.plot(x_true, u_true, 'k--')
-        subdomain_plots = [plt.plot([], []) for _ in range(n_subdomains)]
-
-        figdir = os.path.join(
-            outdir,
-            NN_label+BC_label+FOM_label+"_Pe_{:d}_nSub_{:d}_over{:f}".format(int(beta/nu), n_subdomains, percent_overlap)
+        # establish available CPU/memory resources
+        avail_cpu, avail_mem = get_resources()
+        mem_per_cpu = avail_mem / avail_cpu
+        ray.init(
+            include_dashboard=False,
+            num_cpus=avail_cpu,
+            object_store_memory=0.3 * avail_mem,
         )
-        if not os.path.isdir(figdir):
-            os.mkdir(figdir)
-        logger = Logger(os.path.join(figdir, "log.txt"))
 
-        framecount = 1
+        # set up sampling algorithm
+        algo = opt_dict["algo"]
+        if algo in ["random", "grid"]:
+            if algo == "grid":
+                grid_flag = True
+            else:
+                grid_flag = False
+            algo_obj = BasicVariantGenerator(constant_grid_search=grid_flag, random_state=0)
 
-        # Begin recording time
-        start = time.time()
+        elif algo == "hyperopt":
+            if "n_initial_points" in opt_dict:
+                n_initial_points = int(opt_dict["n_initial_points"])
+            else:
+                n_initial_points = 20
+            algo_obj = HyperOptSearch(n_initial_points=n_initial_points, random_state_seed=0)
 
-        # Record u_hat at each boundary to stack on each iteration
-        u_gamma = np.zeros(sub.shape)
+        elif algo == "bayes":
+            for _, param in param_space.items():
+                if issubclass(type(param), ray.tune.search.sample.Domain):
+                    assert isinstance(param.sampler, ray.tune.search.sample.Float._Uniform), "Bayes only permits `uniform` search spaces"
+            algo_obj = BayesOptSearch(random_state=0)
 
-        # Main Schwarz loop
-        while (schwarz_conv > schwarz_tol or ref_err > err_tol):
+        # fit and report best parameter
+        tuner = tune.Tuner(
+            tune.with_resources(objective, {"cpu": 1, "memory": mem_per_cpu}),
+            tune_config=tune.TuneConfig(
+                search_alg=algo_obj,
+                num_samples=opt_dict["n_samples"],
+                metric="time",
+                mode="min",
+                reuse_actors=False,
+            ),
+            param_space=param_space,
+        )
+        results = tuner.fit()
+        print(results.get_best_result().config)
 
-            # initialize error check variables to 0 as they are to be added to during sub-domain iteration
-            schwarz_conv = 0
-            ref_err = 0
-
-            # Add to Schwarz iteration count
-            iterCount += 1
-
-            # Update title for Schwarz iter
-            plt.title('Schwarz iteration {:d}; Pe = {:d}'.format(iterCount, Pe), fontsize=14)
-
-            # loop over each model for training
-            for s in range(len(model_om)):
-
-                # Current model domain points
-                X_r = X_r_om[s]
-                # Current model boundary points
-                X_b = X_b_om[s]
-
-                # Current model
-                model_r = model_om[s]
-                # Adjacent models for interface conditions
-                model_i = [model_om[s-1:s], model_om[s+1:s+2]]
-
-                # update the current models BCs according to adjacent models and save to model for SDBCs
-                if any(SDBC):
-                    if model_i[0]:
-                        u_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s-1][:,0], u_i[s-1][:,0])
-                    if model_i[1]:
-                        u_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s+1][:,0], u_i[s+1][:,0])
-                model_r.u_gamma = u_gamma[s]
-
-                # Initialize solver
-                p = PINN_Schwarz_Steady(pde1, model_r, model_i, SDBC, X_r, X_b, alpha, snap)
-
-                # Solve model for current sub-domain
-                p.solve(tf.keras.optimizers.Adam(learning_rate=learn_rate), numEpochs)
-
-                MSE_tag = "MSE Sub-domain {:d}".format(s+1)
-
-                # If current model is FD, output FD Error, update current iteration solution and convergence metrics
-                if isinstance(model_r, FD_1D_Steady):
-                    print('Model {:d}: '.format(s+1))
-                    print('\t'+'Finite Difference error = {:10.8e}'.format(p.err))
-
-                    ParameterSweep.loc[z, MSE_tag] = np.float64(p.err)
-
-                    u_i[s] = model_r(x_schwarz[s])
-                    schwarz_conv += tf.math.reduce_euclidean_norm(u_i[s] - u_i_minus1[s])/tf.math.reduce_euclidean_norm(u_i[s])
-                    ref_err += tf.math.reduce_euclidean_norm(u_i[s] - pde1.f(x_schwarz[s]))/tf.math.reduce_euclidean_norm(pde1.f(x_schwarz[s]))
-
-                # If current model is NN output the model loss, update current iteration solution and convergence metrics
-                else:
-                    print('Model {:d}: '.format(s+1))
-                    print('\t'+'Residual loss = {:10.8e}'.format(p.phi_r))
-                    if not schBC:
-                        print('\t'+'Interface loss = {:10.8e}'.format(p.phi_i))
-                    if not sysBC:
-                        print('\t'+'Boundary loss = {:10.8e}'.format(p.phi_b))
-                    if snap:
-                        print('\t'+'Snapshot loss = {:10.8e}'.format(p.phi_s))
-                    print('\t'+'Total loss = {:10.8e}'.format(p.loss))
-
-                    ParameterSweep.loc[z, MSE_tag] = np.float64(p.loss)
-
-                    if any(SDBC):
-                        u_i[s] = p.get_u_hat(x_schwarz[s], model_r)
-                    else:
-                        u_i[s] = model_r(x_schwarz[s])
-
-                    schwarz_conv += tf.math.reduce_euclidean_norm(u_i[s] - u_i_minus1[s])/tf.math.reduce_euclidean_norm(u_i[s])
-                    ref_err += tf.math.reduce_euclidean_norm(u_i[s] - pde1.f(x_schwarz[s]))/tf.math.reduce_euclidean_norm(pde1.f(x_schwarz[s]))
-
-
-                # update frame for animation
-                subdomain_plots[s][0].set_data(x_schwarz[s][:,0], u_i[s])
-
-
-            # Calculate the normalized difference between u for the current iteration and u for the previous iteration
-            schwarz_conv = schwarz_conv/len(u_i)
-            ref_err = ref_err/len(u_i)
-
-            # Update the value of u stored for the previous iteration
-            u_i_minus1 = u_i.copy()
-
-            # Save current frame as image if needed for beamer animations
-            figfile = os.path.join(figdir, f"fig_{framecount}.png")
-            fig.savefig(figfile, dpi=100)
-            framecount += 1
-
-            # Output current Schwarz error
-            print("")
-            logger.write('Schwarz iteration {:d}: Convergence error = {:10.8e}, Reference Error = {:10.8e}\n'.format(iterCount, schwarz_conv, ref_err))
-
-            # Cut off simulat at a particular number of Schwarz iterations
-            if (iterCount == 100):
-                break
-
-        # End time recording
-        end = time.time()
-
-        # Record results for coupled model
-        ParameterSweep.loc[z, 'CPU Time (s)'] = end-start
-        ParameterSweep.loc[z, 'Schwarz Iterations'] = iterCount
-        ParameterSweep.loc[z, 'Avg L2 Error'] = np.float64(ref_err)
-
-        # Export final results to CSV
-        ParameterSweep.to_csv(os.path.join(outdir, "ParamResults.csv"))
-
-        plt.close(fig)
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(prog="PINN-Schwarz", description="Schwarz-based training of PINN-PINN coupling")
 
-    parser = argparse.ArgumentParser(
-        prog='PINN-Schwarz',
-        description='Schwarz-based training of PINN-PINN coupling')
-
-    parser.add_argument('parameter_file')
-    parser.add_argument('outdir')
+    parser.add_argument("parameter_file")
+    parser.add_argument("outdir")
     args = parser.parse_args()
 
-    driver(args.parameter_file, args.outdir)
+    launch_training(args.parameter_file, args.outdir)
