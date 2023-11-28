@@ -114,7 +114,7 @@ class FD_1D_Steady():
 
 
 class PINN_Schwarz_Steady():
-    def __init__(self, pde, model_r, model_i, SDBC, X_r, X_b, alpha, snap, lamb_xb, BC_mixing,Schwarz_Iteration):
+    def __init__(self, pde, model_r, model_i, SDBC, X_r, X_b, alpha, snap, lamb_xb, BC_type, Schwarz_Iteration):
 
         # Store PDE
         self.pde = pde
@@ -127,7 +127,7 @@ class PINN_Schwarz_Steady():
         self.sdbc = SDBC
 
         # set BC treatment mixing boolean
-        self.BC_mixing = BC_mixing
+        self.BC_type = BC_type
 
         # Store internal collocation points
         self.x = X_r
@@ -195,48 +195,43 @@ class PINN_Schwarz_Steady():
         else:
             bounds = [model.xl, model.xr]
 
-            # Scaling function to enforce NN outputs to 0 at all boundaries
-            v_x = tf.math.tanh(self.m*(x - bounds[0]))*tf.math.tanh(self.m*(bounds[1] - x))
+            v_x = self.v_x(x, bounds)
+            phi_x = self.phi_x(x, bounds)
+            psi_x = self.psi_x(x, bounds)
 
-            # scaling functions to smooth enforcement of Schwarz BCs
-            scale = [10**(-10*(x-bounds[0])), 10**(10*(x-bounds[1]))]
-
-            # scale model outputs
-            u_hat = v_x*model(x)
-
-            # add BCs according to adjacent models
-            for i,u_g in enumerate(model.u_gamma):
-                u_hat = u_hat + scale[i]*u_g
+            if self.BC_type == 'DD':
+                u_hat = v_x*model(x) + phi_x*model.u_gamma[0] + psi_x*model.u_gamma[1]
+            elif self.BC_type == 'DN':
+                if  not self.model_i[1]:
+                    # in final subdomain, pure dirichlet
+                    u_hat = v_x*model(x) + phi_x*model.u_gamma[0] + psi_x*model.u_gamma[1]
+                else:
+                    u_hat = v_x*model(x) + phi_x*model.u_gamma[0] + psi_x*model.du_gamma[1]
 
             return u_hat
+
+    # scaling functions
+    def v_x(self, x, bounds):
+        if self.BC_type == 'DD':
+            v_x = tf.math.tanh(self.m*(x - bounds[0]))*tf.math.tanh(self.m*(bounds[1] - x))
+        elif self.BC_type == 'DN':
+            v_x = tf.math.exp((x - bounds[0]) * (x - bounds[1])) - 1 - (x - bounds[0]) * (x - bounds[1])
+        return v_x
+
+    def phi_x(self, x, bounds):
+        if self.BC_type == 'DD':
+            phi_x = 10**(-10*(x-bounds[0]))
+        elif self.BC_type == 'DN':
+            phi_x = phi_transform(bounds, x)
+        return phi_x
     
-    def get_u_hat_DN(self, x, model):
-
+    def psi_x(self, x, bounds):
+        if self.BC_type == 'DD':
+            psi_x = 10**(10*(x-bounds[1]))
+        elif self.BC_type == 'DN':
+            psi_x = psi_transform(bounds, x)
+        return psi_x
     
-        bounds = [model.xl, model.xr]
-
-        # Scaling function to enforce NN outputs to 0 at all boundaries
-        v_x = tf.math.exp((x - bounds[0]) * (x - bounds[1])) - 1 - (x - bounds[0]) * (x - bounds[1])
-        breakpoint()
-        # scaling functions to smooth enforcement of Schwarz BCs
-        phi = phi_transform(bounds, x)
-        psi = psi_transform(bounds, x)
-
-        # # normalize v
-        # vm = tf.reduce_max(tf.abs(v))
-        # psim = tf.reduce_max(tf.abs(psi))
-        # v_normalized = v / vm * psim    
-        
-        # compute u_hat
-        if  not self.model_i[1]:
-            # in final subdomain, pure dirichlet
-            u_hat = self.get_u_hat(x, model)
-        else:
-            u_hat = v_x*model(x) + phi*model.u_gamma[0] + psi*model.du_gamma[1]
-
-        return u_hat
-
-
     # @tf.function
 
     def get_gradients(self,model,x):
@@ -248,7 +243,7 @@ class PINN_Schwarz_Steady():
 
             # Compute current values u(x) with strongly enforced BCs
             if any(self.sdbc):
-                u = self.get_u_hat_DN(x, model)
+                u = self.get_u_hat(x, model)
             else:
                 u = model(x)
 
@@ -267,7 +262,6 @@ class PINN_Schwarz_Steady():
 
         return self.pde.f_r(u_x, u_xx)
         
-
     # Enforce system and/or Schwarz boundaries strongly
     def loss_strong(self, x):
 
@@ -330,46 +324,8 @@ class PINN_Schwarz_Steady():
         loss += phi_b + phi_i + phi_s
 
         return loss, phi_r, phi_b, phi_i, phi_s
-
-
-    # Enforce system and Schwarz boundaries weakly
-    def loss_weak(self, x):
-
-        # Compute phi_r
-        r = self.get_residual(self.model_r,x)
-        phi_r = self.a * tf.reduce_mean(tf.square(r))
-
-        # Initialize loss with residual loss function
-        loss = phi_r
-
-        phi_b = 0
-        phi_i = 0
-        for i, model in enumerate(self.model_i):
-
-            b = self.xb[i]
-
-            # Calculate boundary loss for current model if applicable
-            if not model:
-                u_pred = self.model_r(b)
-                phi_b += (1 - self.a) * tf.reduce_mean(tf.square(self.pde.f_b(b) - u_pred))
-
-            else:
-                # Calculate interface loss for current model if applicable
-                u_pred1 = self.model_r(b)
-                u_pred2 = model[0](b)
-                phi_i += (1 - self.a) * tf.reduce_mean(tf.square(u_pred1 - u_pred2))
-
-        phi_s = 0
-        if self.snap:
-            # calculate snapshot data loss
-            phi_s = (1 - self.a) * tf.reduce_mean(tf.square( self.model_r(self.xs) - self.pde.f(self.xs) ))
-
-        # Add phi_b, phi_i, and phi_s to the loss
-        loss += phi_b + phi_i + phi_s
-
-        return loss, phi_r, phi_b, phi_i, phi_s
     
-    def loss_weak_DN(self, x):
+    def loss_weak(self, x):
         # this calculates the value of the loss function for Dirichlet-Neuman coupling with relaxation
 
         # Compute phi_r
@@ -381,41 +337,42 @@ class PINN_Schwarz_Steady():
 
         phi_b = 0
         phi_i = 0
-        boundary_point = 0
+        
+        # set indices of BCs
+        if self.BC_type == 'DN':
+            Dir_pts, Neum_pts = self.Dirch_Neuman_pts()
+        elif self.BC_type == 'DD':
+            Dir_pts = [0, 1]
+            Neum_pts = [-10]
 
+        # step through boundaries, enforcing corresponding BCs
+        boundary_pt = -1 # counter
         for i, model in enumerate(self.model_i):
-            boundary_point += 1
+            boundary_pt += 1
             b = self.xb[i]
 
             # Calculate boundary loss for current model if applicable
             if not model:
                 u_pred = self.model_r(b)
                 phi_b += (1 - self.a) * tf.reduce_mean(tf.square(self.pde.f_b(b) - u_pred))
-            else:
-                if not self.sch_iter % 2 == 0:
-                    # odd iterations
-                    if boundary_point == 1:
-                        # calculate interface loss for current model if applicable at front interface
-                        # apply Neuman conditions on left
-                        du_pred1, _ = self.get_gradients(self.model_r,b)
-                        du_pred2, _ = self.get_gradients(model[0],b)
-                        phi_i += (1 - self.a) * tf.reduce_mean(tf.square(du_pred1 - du_pred2))
-                    else:
-                        # Calculate interface loss for current model if applicable at back interface of subdomain
-                        # apply Dirichlet conditions
-                        u_pred1 = self.model_r(b)
-                        phi_i += (1 - self.a) * tf.reduce_mean(tf.square(u_pred1 - self.lamb_xb))
-                else:
-                    # even iteration
-                    if boundary_point == 1:
-                        # apply Dirichlet conditions
-                        u_pred1 = self.model_r(b)
-                        phi_i += (1 - self.a) * tf.reduce_mean(tf.square(u_pred1 - self.lamb_xb))
-                    else:
-                        # apply Neuman conditions
-                        du_pred1, _ = self.get_gradients(self.model_r,b)
-                        du_pred2, _ = self.get_gradients(model[0],b)
-                        phi_i += (1 - self.a) * tf.reduce_mean(tf.square(du_pred1 - du_pred2))
+
+            else:     
+                if boundary_pt in Neum_pts:
+                    # calculate interface loss for current model if applicable at front interface
+                    # apply Neuman conditions on left
+                    du_pred1, _ = self.get_gradients(self.model_r,b)
+                    du_pred2, _ = self.get_gradients(model[0],b)
+                    phi_i += (1 - self.a) * tf.reduce_mean(tf.square(du_pred1 - du_pred2))
+
+                elif boundary_pt in Dir_pts:
+                    # Calculate interface loss for current model if applicable at back interface of subdomain
+                    # apply Dirichlet conditions
+                    u_pred1 = self.model_r(b)
+                    if self.BC_type == 'DN':
+                        u_pred2 = self.lamb_xb
+                    elif self.BC_type == 'DD':
+                        u_pred2 = model[0](b)
+                    phi_i += (1 - self.a) * tf.reduce_mean(tf.square(u_pred1 - u_pred2))
                         
         phi_s = 0
         if self.snap:
@@ -424,9 +381,20 @@ class PINN_Schwarz_Steady():
 
         # Add phi_b, phi_i, and phi_s to the loss
         loss += phi_b + phi_i + phi_s
-
+        
         return loss, phi_r, phi_b, phi_i, phi_s
 
+    def Dirch_Neuman_pts(self):
+        # function returns the x point at which the BC is dirchlet and at which it is neumann depending on iteration
+        if self.sch_iter % 2 == 0:
+        # even iterations
+            Dir_index = [0]
+            Neum_index = [1]
+        else:
+            Dir_index = [1]
+            Neum_index = [0]
+
+        return Dir_index, Neum_index
 
     def loss_weak_Robin(self, x):
 
@@ -466,19 +434,16 @@ class PINN_Schwarz_Steady():
         loss += phi_b + phi_i + phi_s
 
         return loss, phi_r, phi_b, phi_i, phi_s
-
+        
     # @tf.function
     def get_gradient_trainable(self, x):
         with tf.GradientTape(persistent=True) as tape:
             # This tape is for derivatives with respect to trainable variables
             tape.watch(self.model_r.trainable_variables)
-            if self.BC_mixing:
-                loss, _, _, _, _ = self.loss_weak_DN(x)
+            if any(self.sdbc):
+                loss, _, _, _, _ = self.loss_strong(x)
             else:
-                if any(self.sdbc):
-                    loss, _, _, _, _ = self.loss_strong(x)
-                else:
-                    loss, _, _, _, _ = self.loss_weak(x)
+                loss, _, _, _, _ = self.loss_weak(x)
 
         g = tape.gradient(loss, self.model_r.trainable_variables)
 
@@ -578,13 +543,10 @@ class PINN_Schwarz_Steady():
                 train_step(self.x)
 
             # Compute loss for full dataset to track training progress
-            if self.BC_mixing:
-                self.loss, self.phi_r, self.phi_b, self.phi_i, self.phi_s = self.loss_weak_DN(self.x)
+            if any(self.sdbc):
+                self.loss, self.phi_r, self.phi_b, self.phi_i, self.phi_s = self.loss_strong(self.x)
             else:
-                if any(self.sdbc):
-                    self.loss, self.phi_r, self.phi_b, self.phi_i, self.phi_s = self.loss_strong(self.x)
-                else:
-                    self.loss, self.phi_r, self.phi_b, self.phi_i, self.phi_s = self.loss_weak(self.x)
+                self.loss, self.phi_r, self.phi_b, self.phi_i, self.phi_s = self.loss_weak(self.x)
 
     # helper functions
 

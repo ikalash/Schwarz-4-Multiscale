@@ -83,6 +83,9 @@ def driver(parameter_file, outdir):
         # Set percentage overlap
         percent_overlap = ParameterSweep.loc[z, 'Percent Overlap']
 
+        # Set BC type overlap
+        BC_type = ParameterSweep.loc[z, 'BC Type']
+
         # Set the number of subdomains and the desired percentage overlap
         n_subdomains = ParameterSweep.loc[z, 'Sub-domains']
 
@@ -112,6 +115,13 @@ def driver(parameter_file, outdir):
         elif SDBC[1]:
             BC_label = '_SDBC_schwarz'
 
+        # check to ensure mixed DBC is only associated with Dirichirlet-Dirichlet BC
+        if (BC_label == '_SDBC_sys' or BC_label == '_SDBC_schwarz')  and not BC_type == 'DD':
+            raise Exception("Mixed stong/weak BCs only compatible with Dirichlet-Dirichlet BC enformement. Change "'BC type'" to DD if running mixed DBCs ")
+
+        if percent_overlap == 0  and BC_type == 'DD':
+            raise Exception("Dirchlet-Dirichlet must be used with overlapping domain, change percent overlap to be non-zero")
+
         NN_label = 'PINN'
         # number of snapshots per subdomain used to aid training, if using snapshots
         if ParameterSweep.loc[z, 'Snapshots']:
@@ -134,11 +144,6 @@ def driver(parameter_file, outdir):
         domain_size =  1 / ( n_subdomains*(1 - percent_overlap) + percent_overlap )
         overlap = percent_overlap*domain_size
 
-        if percent_overlap == 0:
-            BC_mixing = True
-        else:
-            BC_mixing = False
-
         # Construct subdomain set
         sub = ()
         for i in range(n_subdomains):
@@ -152,14 +157,6 @@ def driver(parameter_file, outdir):
         # Generate boundary points for each subdomain boundary
         X_b_om = [ [ tf.constant(np.tile([i], (N_b, 1)), dtype=DTYPE) for i in sub[j] ] for j in range(len(sub))]
         lambda_xb = [ tf.constant(np.tile(0, (N_b, 1)), dtype=DTYPE) for _ in range(len(sub))]
-        # breakpoint()
-        # print("model 1 boundaries:")
-        # print(X_b_om[0])
-        # print("model 2 boundaries:")
-        # print(X_b_om[1])
-        # print("model 3 boundaries:")
-        # print(X_b_om[2])
-        # breakpoint()
 
         # Set random seed for reproducible results
         tf.random.set_seed(0)
@@ -218,9 +215,9 @@ def driver(parameter_file, outdir):
         np.random.seed(0)
         x_schwarz = [tf.constant(np.linspace(s[0], s[1], num=n_FD), shape=(n_FD, 1), dtype=DTYPE) for s in sub]
         u_i_minus1 = [tf.constant(np.random.rand(n_FD,1), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
-        u_i = [tf.constant(np.zeros((n_FD,1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
+        u_i = [tf.constant(np.ones((n_FD,1)) * -.25, shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
         du_i = [tf.constant(np.zeros((n_FD,1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
-        #breakpoint()
+
         # Initialize variables for plotting Schwarz results
         fig = plt.figure(layout='tight')
         fig.set_size_inches(6, 3)
@@ -259,7 +256,7 @@ def driver(parameter_file, outdir):
 
             # Add to Schwarz iteration count
             iterCount += 1
-            # reset L_count, an index corresponding to the interface lambda is computed at
+            # reset L_count, an index corresponding to the interface lambda (for DN BCs) is computed at
             L_count = -1
             # Update title for Schwarz iter
             plt.title('Schwarz iteration {:d}; Pe = {:d}'.format(iterCount, Pe), fontsize=14)
@@ -279,7 +276,8 @@ def driver(parameter_file, outdir):
                 model_i = [model_om[s-1:s], model_om[s+1:s+2]]
 
                 if any(SDBC):
-                    if not BC_mixing:
+                    if BC_type =='DD':
+                        # overlap
                         if model_i[0]:
                             u_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s-1][:,0], u_i[s-1][:,0])
                             du_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s-1][:,0], du_i[s-1][:,0])
@@ -287,6 +285,7 @@ def driver(parameter_file, outdir):
                             u_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s+1][:,0], u_i[s+1][:,0])
                             du_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s+1][:,0], du_i[s+1][:,0])
                     else:
+                        # non overlap
                         if model_i[0]:
                             u_gamma[s][0] = u_i[s-1][-1,0]
                             du_gamma[s][0] =  du_i[s-1][-1,0]
@@ -295,10 +294,9 @@ def driver(parameter_file, outdir):
                             du_gamma[s][1] = du_i[s+1][0,0]
                 model_r.u_gamma = u_gamma[s]
                 model_r.du_gamma = du_gamma[s]
-                # breakpoint()
 
                 # update lambda for current subdomain for BC loss contribution of left point. only for non overlapping
-                if BC_mixing:
+                if BC_type == 'DN':
                     if iterCount % 2 == 0 and model_i[0]:
                         L_count += 1
                         u_xb = model_i[0][0](X_b[0])
@@ -307,31 +305,12 @@ def driver(parameter_file, outdir):
                         L_count += 1
                         u_xb = model_i[1][0](X_b[1])
                         lambda_xb[L_count] = theta * u_xb + (1 - theta) * lambda_xb[L_count]
-                    # breakpoint()
-                # print(lambda_xb)
 
                 # Initialize solver
-                p = PINN_Schwarz_Steady(pde1, model_r, model_i, SDBC, X_r, X_b, alpha, snap, lambda_xb[L_count], BC_mixing,iterCount)
+                p = PINN_Schwarz_Steady(pde1, model_r, model_i, SDBC, X_r, X_b, alpha, snap, lambda_xb[L_count], BC_type, iterCount)
 
                 # Solve model for current sub-domain
                 p.solve(tf.keras.optimizers.Adam(learning_rate=learn_rate), numEpochs)
-
-                if model_i[0]:
-                    print("left model prediction:")
-                    print(model_i[0][0](X_b[0])[0])
-                    print("current model prediction:")
-                    print(model_r(X_b[0])[0])
-                    print("at X point")
-                    print(X_b[0][0])
-                if model_i[1]:
-                    print("right model prediction:")
-                    print(model_i[1][0](X_b[1])[0])
-                    print("current model prediction:")
-                    print(model_r(X_b[1])[0])
-                    print("at X point")
-                    print(X_b[1][0])
-
-
 
                 MSE_tag = "MSE Sub-domain {:d}".format(s+1)
 
@@ -410,14 +389,16 @@ def driver(parameter_file, outdir):
 
         plt.close(fig)
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(
-        prog='PINN-Schwarz',
-        description='Schwarz-based training of PINN-PINN coupling')
+#     parser = argparse.ArgumentParser(
+#         prog='PINN-Schwarz',
+#         description='Schwarz-based training of PINN-PINN coupling')
 
-    parser.add_argument('parameter_file')
-    parser.add_argument('outdir')
-    args = parser.parse_args()
+#     parser.add_argument('parameter_file')
+#     parser.add_argument('outdir')
+#     args = parser.parse_args()
 
-    driver(args.parameter_file, args.outdir)
+#     driver(args.parameter_file, args.outdir)
+    
+driver("/Users/peterkrenek/Documents/Research/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/cases/example/input.csv", os.getcwd() + "/test_outputs")
