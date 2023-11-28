@@ -401,4 +401,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     driver(args.parameter_file, args.outdir)
-    

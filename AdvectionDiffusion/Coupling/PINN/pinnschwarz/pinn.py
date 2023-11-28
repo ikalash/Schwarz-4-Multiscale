@@ -385,7 +385,7 @@ class PINN_Schwarz_Steady():
 
                 elif boundary_pt in Robin_pts:
                     # apply robin-robin conditions
-                    L = 1000
+                    L = 10
                     phi_i += (1 - self.a) * tf.reduce_mean(tf.square((L*u_pred1 + du_pred1) - (L*u_pred2 + du_pred2)))
                         
         phi_s = 0
@@ -409,45 +409,6 @@ class PINN_Schwarz_Steady():
             Neum_index = [0]
 
         return Dir_index, Neum_index
-
-    def loss_weak_Robin(self, x):
-
-        # Compute phi_r
-        r = self.get_residual(self.model_r,x)
-        phi_r = self.a * tf.reduce_mean(tf.square(r))
-
-        # Initialize loss with residual loss function
-        loss = phi_r
-
-        phi_b = 0
-        phi_i = 0
-        for i, model in enumerate(self.model_i):
-
-            b = self.xb[i]
-
-            # Calculate boundary loss for current model if applicable
-            if not model:
-                u_pred = self.model_r(b)
-                phi_b += (1 - self.a) * tf.reduce_mean(tf.square(self.pde.f_b(b) - u_pred))
-
-            else:
-                # Calculate interface loss for current model if applicable
-                L = 1000
-                du_pred1, _ = self.get_gradients(self.model_r,b)
-                du_pred2, _ = self.get_gradients(model[0],b)
-                u_pred1 = self.model_r(b)
-                u_pred2 = model[0](b)
-                phi_i += (1 - self.a) * tf.reduce_mean(tf.square((L*u_pred1 + du_pred1) - (L*u_pred2 + du_pred2)))
-
-        phi_s = 0
-        if self.snap:
-            # calculate snapshot data loss
-            phi_s = (1 - self.a) * tf.reduce_mean(tf.square( self.model_r(self.xs) - self.pde.f(self.xs) ))
-
-        # Add phi_b, phi_i, and phi_s to the loss
-        loss += phi_b + phi_i + phi_s
-
-        return loss, phi_r, phi_b, phi_i, phi_s
         
     # @tf.function
     def get_gradient_trainable(self, x):
