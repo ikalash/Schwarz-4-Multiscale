@@ -1,2 +1,2 @@
 ,Peclet Number,FOM,Snapshots,BC Type,System BCs,Schwarz BCs,Percent Overlap,Sub-domains,CPU Time (s),Schwarz Iterations,Avg L2 Error,MSE Sub-domain 1,MSE Sub-domain 2,MSE Sub-domain 3,MSE Sub-domain 4,MSE Sub-domain 5
-0,10,None,False,DN,weak,weak,0.0,3,,,,,,,,
+0,10,None,False,DD,weak,weak,0.10,3,,,,,,,,

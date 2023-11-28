@@ -118,7 +118,8 @@ def driver(parameter_file, outdir):
         # check to ensure mixed DBC is only associated with Dirichirlet-Dirichlet BC
         if (BC_label == '_SDBC_sys' or BC_label == '_SDBC_schwarz')  and not BC_type == 'DD':
             raise Exception("Mixed stong/weak BCs only compatible with Dirichlet-Dirichlet BC enformement. Change "'BC type'" to DD if running mixed DBCs ")
-
+        if BC_label == '_SDBC_both' and BC_type == 'RR':
+            raise Exception("Robin-Robin not supported for Strong enforcement")
         if percent_overlap == 0  and BC_type == 'DD':
             raise Exception("Dirchlet-Dirichlet must be used with overlapping domain, change percent overlap to be non-zero")
 
@@ -389,16 +390,15 @@ def driver(parameter_file, outdir):
 
         plt.close(fig)
 
-# if __name__ == "__main__":
+if __name__ == "__main__":
 
-#     parser = argparse.ArgumentParser(
-#         prog='PINN-Schwarz',
-#         description='Schwarz-based training of PINN-PINN coupling')
+    parser = argparse.ArgumentParser(
+        prog='PINN-Schwarz',
+        description='Schwarz-based training of PINN-PINN coupling')
 
-#     parser.add_argument('parameter_file')
-#     parser.add_argument('outdir')
-#     args = parser.parse_args()
+    parser.add_argument('parameter_file')
+    parser.add_argument('outdir')
+    args = parser.parse_args()
 
-#     driver(args.parameter_file, args.outdir)
+    driver(args.parameter_file, args.outdir)
     
-driver("/Users/peterkrenek/Documents/Research/Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/cases/example/input.csv", os.getcwd() + "/test_outputs")

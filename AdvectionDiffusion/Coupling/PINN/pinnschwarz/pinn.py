@@ -338,12 +338,18 @@ class PINN_Schwarz_Steady():
         phi_b = 0
         phi_i = 0
         
-        # set indices of BCs
+        # set indices of BCs (-10 for non-applicable BC types)
         if self.BC_type == 'DN':
             Dir_pts, Neum_pts = self.Dirch_Neuman_pts()
+            Robin_pts = [-10]
         elif self.BC_type == 'DD':
             Dir_pts = [0, 1]
             Neum_pts = [-10]
+            Robin_pts = [-10]
+        elif self.BC_type == 'RR':
+            Robin_pts = [0, 1]
+            Neum_pts = [-10]
+            Dir_pts = [-10]
 
         # step through boundaries, enforcing corresponding BCs
         boundary_pt = -1 # counter
@@ -356,23 +362,31 @@ class PINN_Schwarz_Steady():
                 u_pred = self.model_r(b)
                 phi_b += (1 - self.a) * tf.reduce_mean(tf.square(self.pde.f_b(b) - u_pred))
 
-            else:     
+            else:
+                # compute function and gradient values at boundary
+                u_pred1 = self.model_r(b)
+                if self.BC_type == 'DN':
+                    u_pred2 = self.lamb_xb
+                else:
+                    u_pred2 = model[0](b)   
+                du_pred1, _ = self.get_gradients(self.model_r,b)
+                du_pred2, _ = self.get_gradients(model[0],b)
+
+                # apply relevant BC enforcement
                 if boundary_pt in Neum_pts:
                     # calculate interface loss for current model if applicable at front interface
                     # apply Neuman conditions on left
-                    du_pred1, _ = self.get_gradients(self.model_r,b)
-                    du_pred2, _ = self.get_gradients(model[0],b)
                     phi_i += (1 - self.a) * tf.reduce_mean(tf.square(du_pred1 - du_pred2))
 
                 elif boundary_pt in Dir_pts:
                     # Calculate interface loss for current model if applicable at back interface of subdomain
                     # apply Dirichlet conditions
-                    u_pred1 = self.model_r(b)
-                    if self.BC_type == 'DN':
-                        u_pred2 = self.lamb_xb
-                    elif self.BC_type == 'DD':
-                        u_pred2 = model[0](b)
                     phi_i += (1 - self.a) * tf.reduce_mean(tf.square(u_pred1 - u_pred2))
+
+                elif boundary_pt in Robin_pts:
+                    # apply robin-robin conditions
+                    L = 1000
+                    phi_i += (1 - self.a) * tf.reduce_mean(tf.square((L*u_pred1 + du_pred1) - (L*u_pred2 + du_pred2)))
                         
         phi_s = 0
         if self.snap:
