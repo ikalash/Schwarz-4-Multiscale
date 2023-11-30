@@ -455,7 +455,7 @@ class PINN_Schwarz_Steady():
                     # compute normal directions
                     n1 = (-1)**(boundary_pt+1)
                     n2 = (-1)**(boundary_pt)
-                    phi_i += (1 - self.a) * (1/(L**2)) * tf.reduce_mean(tf.square((L*u_pred1 + n1*du_pred1) - (L*u_pred2 + n2*du_pred2)))
+                    phi_i += (1 - self.a) * tf.reduce_mean(tf.square((L*u_pred1 + n1*du_pred1) - (L*u_pred2 + n2*du_pred2)))
         
         phi_s = 0
         if self.snap:
