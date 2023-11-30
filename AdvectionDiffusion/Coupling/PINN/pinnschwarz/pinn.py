@@ -201,14 +201,26 @@ class PINN_Schwarz_Steady():
 
             if self.BC_type == 'DD':
                 u_hat = v_x*model(x) + phi_x*model.u_gamma[0] + psi_x*model.u_gamma[1]
+            
             elif self.BC_type == 'DN':
+                #  THESE SCALING FUNCTIONS NEED TO BE REDERIVED
                 if  not self.model_i[1]:
-                    # in final subdomain, pure dirichlet
+                    # in final subdomain, pure dirichlet, 
+                    # NOT THIS SIMPLE HOWEVER SINCE PHI AND PSI DONT SUPPORT RECOVERY OF Gi AND Gi+1  AT BOUNDARIES
                     u_hat = v_x*model(x) + phi_x*model.u_gamma[0] + psi_x*model.u_gamma[1]
                 else:
                     u_hat = v_x*model(x) + phi_x*model.u_gamma[0] + psi_x*model.du_gamma[1]
+            
+            elif self.BC_type == 'RR':
+                u_xt = self.u_x_theta(x, bounds, model)
+                if bounds[0] == 0:
+                    g = model.u_gamma[0]
+                else:
+                    g = model.u_gamma[1]
+                    
+                u_hat = v_x*model(x) + phi_x*g + psi_x*u_xt
 
-            return u_hat
+        return u_hat
 
     # scaling functions
     def v_x(self, x, bounds):
@@ -216,6 +228,13 @@ class PINN_Schwarz_Steady():
             v_x = tf.math.tanh(self.m*(x - bounds[0]))*tf.math.tanh(self.m*(bounds[1] - x))
         elif self.BC_type == 'DN':
             v_x = tf.math.exp((x - bounds[0]) * (x - bounds[1])) - 1 - (x - bounds[0]) * (x - bounds[1])
+        elif self.BC_type == 'RR':
+            phi1, phi2 = Robin_phis(bounds, x)
+            # compute phi according to which sudomain is being solved (only 2 subdomains for RBC strong)
+            if bounds[0] == 0:
+                v_x = phi1 * (phi2**2)
+            else:
+                v_x = phi2 * (phi1**2)
         return v_x
 
     def phi_x(self, x, bounds):
@@ -223,6 +242,13 @@ class PINN_Schwarz_Steady():
             phi_x = 10**(-10*(x-bounds[0]))
         elif self.BC_type == 'DN':
             phi_x = phi_transform(bounds, x)
+        elif self.BC_type == 'RR':
+            _, w2, _, w4 = Robin_ws(bounds, x)
+            if bounds[0] == 0:
+                phi_x = w2
+            else:
+                phi_x = w4
+
         return phi_x
     
     def psi_x(self, x, bounds):
@@ -230,12 +256,52 @@ class PINN_Schwarz_Steady():
             psi_x = 10**(10*(x-bounds[1]))
         elif self.BC_type == 'DN':
             psi_x = psi_transform(bounds, x)
+        elif self.BC_type == 'RR':
+            w1, _, w3, _ = Robin_ws(bounds, x)
+            if bounds[0] == 0:
+                psi_x = w1
+            else:
+                psi_x = w3
+
         return psi_x
+    
+    def u_x_theta(self, x, bounds, model):
+        # function to compute u(x;theta) for RBC depending on domain, only supports 2 subdomains
+        
+        phi1, phi2 = Robin_phis(bounds, x)
+        c = 8 # user defined weight on Dirichlet term
+        Du = self.gradient_NN(model, x)
+
+        if bounds[0] == 0:
+            Dn = 1 # directional derivative term
+            h = Dn * model.du_gamma[1] + c * model.u_gamma[1]
+            u = (1 + phi2 * (c + Dn * Du)) * model(x) - phi2 * h
+        else:
+            Dn = -1
+            h = Dn * model.du_gamma[0] + c * model.u_gamma[0]
+            u = (1 + phi1 * (c - Dn * Du)) * model(x) - phi1 * h
+
+        return u
+
+    def gradient_NN(self,model,x):
+        # function to calculate the gradient of the nueral network
+
+        with tf.GradientTape(persistent=True) as tape:
+            # Watch variable x during this GradientTape
+            tape.watch(x)
+
+            # Compute current values u(x) with strongly enforced BCs
+            u = model(x)
+
+            # Store first derivative
+            u_x = tape.gradient(u, x)
+
+        return u_x
     
     # @tf.function
 
     def get_gradients(self,model,x):
-        # function to calculate the first and second derivative using graident tape 
+        # function to calculate the first and second derivative or either uhat or NN 
 
         with tf.GradientTape(persistent=True) as tape:
             # Watch variable x during this GradientTape
@@ -339,17 +405,15 @@ class PINN_Schwarz_Steady():
         phi_i = 0
         
         # set indices of BCs (-10 for non-applicable BC types)
+        Dir_pts = []
+        Neum_pts = []
+        Robin_pts = []
         if self.BC_type == 'DN':
             Dir_pts, Neum_pts = self.Dirch_Neuman_pts()
-            Robin_pts = [-10]
         elif self.BC_type == 'DD':
             Dir_pts = [0, 1]
-            Neum_pts = [-10]
-            Robin_pts = [-10]
         elif self.BC_type == 'RR':
             Robin_pts = [0, 1]
-            Neum_pts = [-10]
-            Dir_pts = [-10]
 
         # step through boundaries, enforcing corresponding BCs
         boundary_pt = -1 # counter
@@ -369,13 +433,13 @@ class PINN_Schwarz_Steady():
                     u_pred2 = self.lamb_xb
                 else:
                     u_pred2 = model[0](b)   
-                du_pred1, _ = self.get_gradients(self.model_r,b)
-                du_pred2, _ = self.get_gradients(model[0],b)
 
                 # apply relevant BC enforcement
                 if boundary_pt in Neum_pts:
                     # calculate interface loss for current model if applicable at front interface
                     # apply Neuman conditions on left
+                    du_pred1, _ = self.get_gradients(self.model_r,b)
+                    du_pred2, _ = self.get_gradients(model[0],b)
                     phi_i += (1 - self.a) * tf.reduce_mean(tf.square(du_pred1 - du_pred2))
 
                 elif boundary_pt in Dir_pts:
@@ -386,8 +450,13 @@ class PINN_Schwarz_Steady():
                 elif boundary_pt in Robin_pts:
                     # apply robin-robin conditions
                     L = 10
-                    phi_i += (1 - self.a) * tf.reduce_mean(tf.square((L*u_pred1 + du_pred1) - (L*u_pred2 + du_pred2)))
-                        
+                    du_pred1, _ = self.get_gradients(self.model_r,b)
+                    du_pred2, _ = self.get_gradients(model[0],b)
+                    # compute normal directions
+                    n1 = (-1)**(boundary_pt+1)
+                    n2 = (-1)**(boundary_pt)
+                    phi_i += (1 - self.a) * (1/(L**2)) * tf.reduce_mean(tf.square((L*u_pred1 + n1*du_pred1) - (L*u_pred2 + n2*du_pred2)))
+        
         phi_s = 0
         if self.snap:
             # calculate snapshot data loss
@@ -559,3 +628,22 @@ def psi_transform(bounds,x):
     psi = b1*(x**4) + b2*(x**3) + b3*(x**2) + b4*x + b5
     
     return psi
+
+def Robin_phis(bounds, x):
+    # helper function to compute phi scaling functions for RBC strong enforcement
+    
+    phi1 = x - bounds[0]
+    phi2 = bounds[1] - x
+
+    return phi1, phi2
+
+def Robin_ws(bounds, x):
+    # helper function to compute the w's for RBC strong enforcement
+    phi1, phi2 = Robin_phis(bounds, x)
+
+    w1 = phi1 / (phi1 + phi2**2)
+    w2 = phi2**2 / (phi1 + phi2**2)
+    w3 = phi2 / (phi2 +phi1)
+    w4 = phi1 / (phi2 + phi1**2)
+
+    return w1, w2, w3, w4

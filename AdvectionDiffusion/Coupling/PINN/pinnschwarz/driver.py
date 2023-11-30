@@ -109,17 +109,19 @@ def driver(parameter_file, outdir):
         # Store BC enforcement booleans together
         SDBC = [sysBC, schBC]
         if all(SDBC):
-            BC_label = '_SDBC_both'
+            BC_label = '_SBC_both'
         elif SDBC[0]:
-            BC_label = '_SDBC_sys'
+            BC_label = '_SBC_sys'
         elif SDBC[1]:
-            BC_label = '_SDBC_schwarz'
+            BC_label = '_SBC_schwarz'
 
         # check to ensure mixed DBC is only associated with Dirichirlet-Dirichlet BC
-        if (BC_label == '_SDBC_sys' or BC_label == '_SDBC_schwarz')  and not BC_type == 'DD':
+        if (BC_label == '_SBC_sys' or BC_label == '_SDBC_schwarz')  and not BC_type == 'DD':
             raise Exception("Mixed stong/weak BCs only compatible with Dirichlet-Dirichlet BC enformement. Change "'BC type'" to DD if running mixed DBCs ")
-        if BC_label == '_SDBC_both' and BC_type == 'RR':
-            raise Exception("Robin-Robin not supported for Strong enforcement")
+        if BC_label == '_SBC_both' and BC_type == 'RR' and not n_subdomains == 2:
+            raise Exception("Strong RBC only funcitonal for 2 subdomains")
+        if BC_label == '_SBC_both' and BC_type == 'DN':
+            Warning('DNBC strong enforcement is not consistent')
         if percent_overlap == 0  and BC_type == 'DD':
             raise Exception("Dirchlet-Dirichlet must be used with overlapping domain, change percent overlap to be non-zero")
 
@@ -216,7 +218,7 @@ def driver(parameter_file, outdir):
         np.random.seed(0)
         x_schwarz = [tf.constant(np.linspace(s[0], s[1], num=n_FD), shape=(n_FD, 1), dtype=DTYPE) for s in sub]
         u_i_minus1 = [tf.constant(np.random.rand(n_FD,1), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
-        u_i = [tf.constant(np.ones((n_FD,1)) * -.25, shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
+        u_i = [tf.constant(np.zeros((n_FD,1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
         du_i = [tf.constant(np.zeros((n_FD,1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
 
         # Initialize variables for plotting Schwarz results
@@ -230,7 +232,7 @@ def driver(parameter_file, outdir):
 
         figdir = os.path.join(
             outdir,
-            NN_label+BC_label+FOM_label+"_Pe_{:d}_nSub_{:d}_over{:f}".format(int(beta/nu), n_subdomains, percent_overlap)
+            NN_label+BC_type+BC_label+FOM_label+"_Pe_{:d}_nSub_{:d}_over{:f}".format(int(beta/nu), n_subdomains, percent_overlap)
         )
         if not os.path.isdir(figdir):
             os.mkdir(figdir)
@@ -259,12 +261,13 @@ def driver(parameter_file, outdir):
             iterCount += 1
             # reset L_count, an index corresponding to the interface lambda (for DN BCs) is computed at
             L_count = -1
+            # L_count = n_subdomains - 1
             # Update title for Schwarz iter
             plt.title('Schwarz iteration {:d}; Pe = {:d}'.format(iterCount, Pe), fontsize=14)
 
             # loop over each model for training
             for s in range(len(model_om)):
-            #for s in range(len(model_om)):
+            # for s in range(len(model_om)-1,-1,-1):
                 
                 # Current model domain points
                 X_r = X_r_om[s]
@@ -374,7 +377,7 @@ def driver(parameter_file, outdir):
             logger.write('Schwarz iteration {:d}: Convergence error = {:10.8e}, Reference Error = {:10.8e}\n'.format(iterCount, schwarz_conv, ref_err))
 
             # Cut off simulat at a particular number of Schwarz iterations
-            if (iterCount == 100):
+            if (iterCount == 500):
                 break
 
         # End time recording
