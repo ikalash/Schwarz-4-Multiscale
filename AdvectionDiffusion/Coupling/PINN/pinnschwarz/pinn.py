@@ -298,7 +298,7 @@ class PINN_Schwarz_Steady():
 
         return u_x
     
-    # @tf.function
+    @tf.function
 
     def get_gradients(self,model,x):
         # function to calculate the first and second derivative or either uhat or NN 
@@ -479,7 +479,7 @@ class PINN_Schwarz_Steady():
 
         return Dir_index, Neum_index
         
-    # @tf.function
+    @tf.function
     def get_gradient_trainable(self, x):
         with tf.GradientTape(persistent=True) as tape:
             # This tape is for derivatives with respect to trainable variables
