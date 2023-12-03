@@ -37,6 +37,7 @@ def trainer(params, outdir, make_figs=False):
         os.mkdir(outdir)
 
     BC_label = "_WDBC"
+    BC_type = params["BC_type"]
     # Choose type of BC enforcement for system BCs (strong (1) or weak (0))
     if params["sys_bcs"] == "weak":
         sysBC = 0
@@ -165,6 +166,7 @@ def trainer(params, outdir, make_figs=False):
     x_schwarz = [tf.constant(np.linspace(s[0], s[1], num=n_FD), shape=(n_FD, 1), dtype=DTYPE) for s in sub]
     u_i_minus1 = [tf.constant(np.random.rand(n_FD, 1), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
     u_i = [tf.constant(np.zeros((n_FD, 1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
+    du_i = [tf.constant(np.zeros((n_FD,1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
 
     # Initialize variables for plotting Schwarz results
     if make_figs:
@@ -194,6 +196,9 @@ def trainer(params, outdir, make_figs=False):
 
     # Record u_hat at each boundary to stack on each iteration
     u_gamma = np.zeros(sub.shape)
+    du_gamma = np.zeros(sub.shape)
+
+    theta = 1
 
     # Main Schwarz loop
     while (schwarz_conv > float(params["schwarz_tol"])) or (ref_err > float(params["err_tol"])):
@@ -222,11 +227,34 @@ def trainer(params, outdir, make_figs=False):
 
             # update the current models BCs according to adjacent models and save to model for SDBCs
             if any(SDBC):
-                if model_i[0]:
-                    u_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s - 1][:, 0], u_i[s - 1][:, 0])
-                if model_i[1]:
-                    u_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s + 1][:, 0], u_i[s + 1][:, 0])
+                if BC_type =='DD':
+                    # overlap
+                    if model_i[0]:
+                        u_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s-1][:,0], u_i[s-1][:,0])
+                        du_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s-1][:,0], du_i[s-1][:,0])
+                    if model_i[1]:
+                        u_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s+1][:,0], u_i[s+1][:,0])
+                        du_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s+1][:,0], du_i[s+1][:,0])
+                else:
+                    # non overlap
+                    if model_i[0]:
+                        u_gamma[s][0] = u_i[s-1][-1,0]
+                        du_gamma[s][0] =  du_i[s-1][-1,0]
+                    if model_i[1]:
+                        u_gamma[s][1] = u_i[s+1][0,0]
+                        du_gamma[s][1] = du_i[s+1][0,0]
             model_r.u_gamma = u_gamma[s]
+            model_r.du_gamma = du_gamma[s]
+
+            if BC_type == 'DN':
+                if iterCount % 2 == 0 and model_i[0]:
+                    L_count += 1
+                    u_xb = model_i[0][0](X_b[0])
+                    lambda_xb[L_count] = theta * u_xb + (1 - theta) * lambda_xb[L_count]
+                elif not iterCount % 2 == 0 and model_i[1]:
+                    L_count += 1
+                    u_xb = model_i[1][0](X_b[1])
+                    lambda_xb[L_count] = theta * u_xb + (1 - theta) * lambda_xb[L_count]
 
             # Initialize solver
             p = PINN_Schwarz_Steady(pde1, model_r, model_i, SDBC, X_r, X_b, float(params["alpha"]), snap)
@@ -270,6 +298,10 @@ def trainer(params, outdir, make_figs=False):
                 ref_err += tf.math.reduce_euclidean_norm(u_i[s] - pde1.f(x_schwarz[s])) / tf.math.reduce_euclidean_norm(
                     pde1.f(x_schwarz[s])
                 )
+
+                du_i[s], _ = p.get_gradients(model_r, x_schwarz[s])
+            # update frame for animation
+            subdomain_plots[s][0].set_data(x_schwarz[s][:,0], u_i[s])
 
             # update frame for animation
             if make_figs:
