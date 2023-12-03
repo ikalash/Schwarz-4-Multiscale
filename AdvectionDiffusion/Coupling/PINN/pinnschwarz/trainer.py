@@ -6,8 +6,8 @@ import tensorflow as tf
 import numpy as np
 from matplotlib import pyplot as plt
 
-from pinnschwarz.pde import PDE_1D_Steady_AdvecDiff
-from pinnschwarz.pinn import PINN_Architecture, FD_1D_Steady, PINN_Schwarz_Steady
+from pde import PDE_1D_Steady_AdvecDiff
+from pinn import PINN_Architecture, FD_1D_Steady, PINN_Schwarz_Steady
 
 # Set data type
 DTYPE = "float64"
