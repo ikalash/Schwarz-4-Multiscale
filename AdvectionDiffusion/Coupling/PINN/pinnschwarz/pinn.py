@@ -115,7 +115,7 @@ class FD_1D_Steady():
 
 class PINN_Schwarz_Steady():
     def __init__(self, pde, model_r, model_i, SDBC, X_r, X_b, alpha, snap, lamb_xb, BC_type, Schwarz_Iteration):
-
+        print("Correct initialization")
         # Store PDE
         self.pde = pde
 

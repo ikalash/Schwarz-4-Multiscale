@@ -69,6 +69,16 @@ def trainer(params, outdir, make_figs=False):
     elif SDBC[1]:
         BC_label = "_SDBC_schwarz"
 
+    # check to ensure mixed DBC is only associated with Dirichirlet-Dirichlet BC
+    if (BC_label == '_SBC_sys' or BC_label == '_SDBC_schwarz')  and not BC_type == 'DD':
+        raise Exception("Mixed stong/weak BCs only compatible with Dirichlet-Dirichlet BC enformement. Change "'BC type'" to DD if running mixed DBCs ")
+    if BC_label == '_SBC_both' and BC_type == 'RR' and not n_subdomains == 2:
+        raise Exception("Strong RBC only funcitonal for 2 subdomains")
+    if BC_label == '_SBC_both' and BC_type == 'DN':
+        Warning('DNBC strong enforcement is not consistent')
+    if percent_overlap == 0  and BC_type == 'DD':
+        raise Exception("Dirchlet-Dirichlet must be used with overlapping domain, change percent overlap to be non-zero")
+
     NN_label = "PINN"
     # number of snapshots per subdomain used to aid training, if using snapshots
     if bool(params["snap_loss"]):
@@ -103,6 +113,7 @@ def trainer(params, outdir, make_figs=False):
 
     # Generate boundary points for each subdomain boundary
     X_b_om = [[tf.constant(np.tile([i], (1, 1)), dtype=DTYPE) for i in sub[j]] for j in range(len(sub))]
+    lambda_xb = [ tf.constant(np.tile(0, (1, 1)), dtype=DTYPE) for _ in range(len(sub))]
 
     # Set random seed for reproducible results
     tf.keras.utils.set_random_seed(0)
@@ -208,6 +219,7 @@ def trainer(params, outdir, make_figs=False):
 
         # Add to Schwarz iteration count
         iterCount += 1
+        L_count = -1
 
         # Update title for Schwarz iter
         if make_figs:
@@ -257,7 +269,7 @@ def trainer(params, outdir, make_figs=False):
                     lambda_xb[L_count] = theta * u_xb + (1 - theta) * lambda_xb[L_count]
 
             # Initialize solver
-            p = PINN_Schwarz_Steady(pde1, model_r, model_i, SDBC, X_r, X_b, float(params["alpha"]), snap)
+            p = PINN_Schwarz_Steady(pde1, model_r, model_i, SDBC, X_r, X_b, float(params["alpha"]), snap, lambda_xb[L_count], BC_type, iterCount)
 
             # Solve model for current sub-domain
             p.solve(tf.keras.optimizers.Adam(learning_rate=float(params["learn_rate"])), int(params["n_epochs"]))
@@ -292,6 +304,8 @@ def trainer(params, outdir, make_figs=False):
                 else:
                     u_i[s] = model_r(x_schwarz[s])
 
+                du_i[s], _ = p.get_gradients(model_r, x_schwarz[s])
+
                 schwarz_conv += tf.math.reduce_euclidean_norm(u_i[s] - u_i_minus1[s]) / tf.math.reduce_euclidean_norm(
                     u_i[s]
                 )
@@ -299,7 +313,6 @@ def trainer(params, outdir, make_figs=False):
                     pde1.f(x_schwarz[s])
                 )
 
-                du_i[s], _ = p.get_gradients(model_r, x_schwarz[s])
             # update frame for animation
             subdomain_plots[s][0].set_data(x_schwarz[s][:,0], u_i[s])
 
