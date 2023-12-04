@@ -10,8 +10,8 @@ from ray.tune.search.basic_variant import BasicVariantGenerator
 from ray.tune.search.hyperopt import HyperOptSearch
 from ray.tune.search.bayesopt import BayesOptSearch
 
-from trainer import trainer
-from utils import get_resources
+from pinnschwarz.trainer import trainer
+from pinnschwarz.utils import get_resources
 
 
 def parse_param(param_dict, param_str, can_opt=False, has_opt=False, default=None):
