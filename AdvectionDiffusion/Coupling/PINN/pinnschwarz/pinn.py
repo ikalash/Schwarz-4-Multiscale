@@ -606,15 +606,13 @@ def phi_transform(bounds, x):
     gip1 = bounds[1]
 
     a1 = (
-        -1
-        / 2
+        (-1 / 2)
         * (3 * gi * gip1**2 + gi**3 + 2 - 3 * gip1 * gi**2 - gip1**3)
         / (gi**4 + 2 * gi * gip1**3 - gip1**4 - 2 * gip1 * gi**3)
     )
     a2 = 1
     a3 = (
-        -1
-        / 2
+        (-1 / 2)
         * (
             gi**5
             + gip1 * gi**4
@@ -635,8 +633,7 @@ def phi_transform(bounds, x):
         / (gi**3 - 3 * gip1 * gi**2 + 3 * gi * gip1**2 - gip1**3)
     )
     a5 = (
-        -1
-        / 2
+        (-1 / 2)
         * gip1**2
         * (
             3 * gip1**2 * gi**3
@@ -662,11 +659,10 @@ def psi_transform(bounds, x):
     gi = bounds[0]
     gip1 = bounds[1]
 
-    b1 = -1 / 2 * (gi**2 - 2 * gip1 * gi - 1 + gip1**2) / (gi**3 - gip1 * gi**2 - gi * gip1**2 + gip1**3)
+    b1 = (-1 / 2) * (gi**2 - 2 * gip1 * gi - 1 + gip1**2) / (gi**3 - gip1 * gi**2 - gi * gip1**2 + gip1**3)
     b2 = 1
     b3 = (
-        -1
-        / 2
+        (-1 / 2)
         * (
             gi**4
             + 2 * gip1 * gi**3
@@ -681,8 +677,7 @@ def psi_transform(bounds, x):
     )
     b4 = (gip1 * gi**2 - 2 * gi * gip1**2 + gi + gip1 + gip1**3) * gi / (gip1**2 - 2 * gip1 * gi + gi**2)
     b5 = (
-        -1
-        / 2
+        (-1 / 2)
         * gip1
         * gi**2
         * (gip1 * gi**2 - 2 * gi * gip1**2 + 2 * gi + gip1**3 + gip1)

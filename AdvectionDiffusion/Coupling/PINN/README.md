@@ -12,12 +12,9 @@ git clone git@github.com:ikalash/Schwarz-4-Multiscale.git
 cd Schwarz-4-Multiscale/AdvectionDiffusion/Coupling/PINN/
 pip install -e .
 ```
-# Add yaml input file
-
-This package thus also requires yaml.
 
 After installation has completed, test the installation by executing the following command:
 
 ```
-python pinnschwarz/driver.py cases/example/input.csv cases/example/
+python3 ./pinnschwarz/driver.py ./cases/example/input_single.yaml ./cases/example/
 ```

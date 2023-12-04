@@ -72,9 +72,8 @@ def trainer(params, outdir, make_figs=False):
     # check to ensure mixed DBC is only associated with Dirichirlet-Dirichlet BC
     if (BC_label == "_SBC_sys" or BC_label == "_SDBC_schwarz") and not BC_type == "DD":
         raise Exception(
-            "Mixed stong/weak BCs only compatible with Dirichlet-Dirichlet BC enformement. Change "
-            "BC type"
-            " to DD if running mixed DBCs "
+            "Mixed stong/weak BCs only compatible with Dirichlet-Dirichlet BC enformement. "
+            "Change BC type to DD if running mixed DBCs"
         )
     if BC_label == "_SBC_both" and BC_type == "RR" and not n_subdomains == 2:
         raise Exception("Strong RBC only funcitonal for 2 subdomains")
@@ -229,7 +228,7 @@ def trainer(params, outdir, make_figs=False):
 
         # Update title for Schwarz iter
         if make_figs:
-            plt.title("Schwarz iteration {:d}; Pe = {:f}".format(iterCount, Pe), fontsize=14)
+            plt.title("Schwarz iteration {:d}; Pe = {:.2f}".format(iterCount, Pe), fontsize=14)
 
         # loop over each model for training
         for s in range(len(model_om)):
