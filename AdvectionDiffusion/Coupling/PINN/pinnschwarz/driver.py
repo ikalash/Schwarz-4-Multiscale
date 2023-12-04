@@ -172,7 +172,9 @@ def launch_training(param_file, outdir):
         elif algo == "bayes":
             for _, param in param_space.items():
                 if issubclass(type(param), ray.tune.search.sample.Domain):
-                    assert isinstance(param.sampler, ray.tune.search.sample.Float._Uniform), "Bayes only permits `uniform` search spaces"
+                    assert isinstance(
+                        param.sampler, ray.tune.search.sample.Float._Uniform
+                    ), "Bayes only permits `uniform` search spaces"
             algo_obj = BayesOptSearch(random_state=0)
 
         # fit and report best parameter

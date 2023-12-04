@@ -70,14 +70,20 @@ def trainer(params, outdir, make_figs=False):
         BC_label = "_SDBC_schwarz"
 
     # check to ensure mixed DBC is only associated with Dirichirlet-Dirichlet BC
-    if (BC_label == '_SBC_sys' or BC_label == '_SDBC_schwarz')  and not BC_type == 'DD':
-        raise Exception("Mixed stong/weak BCs only compatible with Dirichlet-Dirichlet BC enformement. Change "'BC type'" to DD if running mixed DBCs ")
-    if BC_label == '_SBC_both' and BC_type == 'RR' and not n_subdomains == 2:
+    if (BC_label == "_SBC_sys" or BC_label == "_SDBC_schwarz") and not BC_type == "DD":
+        raise Exception(
+            "Mixed stong/weak BCs only compatible with Dirichlet-Dirichlet BC enformement. Change "
+            "BC type"
+            " to DD if running mixed DBCs "
+        )
+    if BC_label == "_SBC_both" and BC_type == "RR" and not n_subdomains == 2:
         raise Exception("Strong RBC only funcitonal for 2 subdomains")
-    if BC_label == '_SBC_both' and BC_type == 'DN':
-        Warning('DNBC strong enforcement is not consistent')
-    if percent_overlap == 0  and BC_type == 'DD':
-        raise Exception("Dirchlet-Dirichlet must be used with overlapping domain, change percent overlap to be non-zero")
+    if BC_label == "_SBC_both" and BC_type == "DN":
+        Warning("DNBC strong enforcement is not consistent")
+    if percent_overlap == 0 and BC_type == "DD":
+        raise Exception(
+            "Dirchlet-Dirichlet must be used with overlapping domain, change percent overlap to be non-zero"
+        )
 
     NN_label = "PINN"
     # number of snapshots per subdomain used to aid training, if using snapshots
@@ -113,7 +119,7 @@ def trainer(params, outdir, make_figs=False):
 
     # Generate boundary points for each subdomain boundary
     X_b_om = [[tf.constant(np.tile([i], (1, 1)), dtype=DTYPE) for i in sub[j]] for j in range(len(sub))]
-    lambda_xb = [ tf.constant(np.tile(0, (1, 1)), dtype=DTYPE) for _ in range(len(sub))]
+    lambda_xb = [tf.constant(np.tile(0, (1, 1)), dtype=DTYPE) for _ in range(len(sub))]
 
     # Set random seed for reproducible results
     tf.keras.utils.set_random_seed(0)
@@ -177,7 +183,7 @@ def trainer(params, outdir, make_figs=False):
     x_schwarz = [tf.constant(np.linspace(s[0], s[1], num=n_FD), shape=(n_FD, 1), dtype=DTYPE) for s in sub]
     u_i_minus1 = [tf.constant(np.random.rand(n_FD, 1), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
     u_i = [tf.constant(np.zeros((n_FD, 1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
-    du_i = [tf.constant(np.zeros((n_FD,1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
+    du_i = [tf.constant(np.zeros((n_FD, 1)), shape=(n_FD, 1), dtype=DTYPE) for _ in x_schwarz]
 
     # Initialize variables for plotting Schwarz results
     if make_figs:
@@ -239,26 +245,26 @@ def trainer(params, outdir, make_figs=False):
 
             # update the current models BCs according to adjacent models and save to model for SDBCs
             if any(SDBC):
-                if BC_type =='DD':
+                if BC_type == "DD":
                     # overlap
                     if model_i[0]:
-                        u_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s-1][:,0], u_i[s-1][:,0])
-                        du_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s-1][:,0], du_i[s-1][:,0])
+                        u_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s - 1][:, 0], u_i[s - 1][:, 0])
+                        du_gamma[s][0] = np.interp(sub[s][0], x_schwarz[s - 1][:, 0], du_i[s - 1][:, 0])
                     if model_i[1]:
-                        u_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s+1][:,0], u_i[s+1][:,0])
-                        du_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s+1][:,0], du_i[s+1][:,0])
+                        u_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s + 1][:, 0], u_i[s + 1][:, 0])
+                        du_gamma[s][1] = np.interp(sub[s][1], x_schwarz[s + 1][:, 0], du_i[s + 1][:, 0])
                 else:
                     # non overlap
                     if model_i[0]:
-                        u_gamma[s][0] = u_i[s-1][-1,0]
-                        du_gamma[s][0] =  du_i[s-1][-1,0]
+                        u_gamma[s][0] = u_i[s - 1][-1, 0]
+                        du_gamma[s][0] = du_i[s - 1][-1, 0]
                     if model_i[1]:
-                        u_gamma[s][1] = u_i[s+1][0,0]
-                        du_gamma[s][1] = du_i[s+1][0,0]
+                        u_gamma[s][1] = u_i[s + 1][0, 0]
+                        du_gamma[s][1] = du_i[s + 1][0, 0]
             model_r.u_gamma = u_gamma[s]
             model_r.du_gamma = du_gamma[s]
 
-            if BC_type == 'DN':
+            if BC_type == "DN":
                 if iterCount % 2 == 0 and model_i[0]:
                     L_count += 1
                     u_xb = model_i[0][0](X_b[0])
@@ -269,7 +275,19 @@ def trainer(params, outdir, make_figs=False):
                     lambda_xb[L_count] = theta * u_xb + (1 - theta) * lambda_xb[L_count]
 
             # Initialize solver
-            p = PINN_Schwarz_Steady(pde1, model_r, model_i, SDBC, X_r, X_b, float(params["alpha"]), snap, lambda_xb[L_count], BC_type, iterCount)
+            p = PINN_Schwarz_Steady(
+                pde1,
+                model_r,
+                model_i,
+                SDBC,
+                X_r,
+                X_b,
+                float(params["alpha"]),
+                snap,
+                lambda_xb[L_count],
+                BC_type,
+                iterCount,
+            )
 
             # Solve model for current sub-domain
             p.solve(tf.keras.optimizers.Adam(learning_rate=float(params["learn_rate"])), int(params["n_epochs"]))
@@ -314,7 +332,7 @@ def trainer(params, outdir, make_figs=False):
                 )
 
             # update frame for animation
-            subdomain_plots[s][0].set_data(x_schwarz[s][:,0], u_i[s])
+            subdomain_plots[s][0].set_data(x_schwarz[s][:, 0], u_i[s])
 
             # update frame for animation
             if make_figs:
