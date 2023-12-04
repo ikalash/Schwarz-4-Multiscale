@@ -19,6 +19,7 @@ schwarz:
   sch_bcs:
     space_type: "choice"
     space_defs: ["weak", "strong"]
+  BC_type: "DD"
   snap_loss: True
   schwarz_tol: 0.001
   err_tol: 0.005

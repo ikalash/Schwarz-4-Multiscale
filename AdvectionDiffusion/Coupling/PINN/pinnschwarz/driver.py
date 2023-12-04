@@ -109,6 +109,7 @@ def parse_input(param_file):
     param_space = append_param_space(param_space, schwarz_dict, "percent_overlap", True, opt)
     param_space = append_param_space(param_space, schwarz_dict, "sys_bcs", True, opt)
     param_space = append_param_space(param_space, schwarz_dict, "sch_bcs", True, opt)
+    param_space = append_param_space(param_space, schwarz_dict, "BC_type", False, opt, "DD")
     param_space = append_param_space(param_space, schwarz_dict, "snap_loss", True, opt)
     param_space = append_param_space(param_space, schwarz_dict, "schwarz_tol", False, opt, 0.001)
     param_space = append_param_space(param_space, schwarz_dict, "err_tol", False, opt, 0.005)
@@ -171,7 +172,9 @@ def launch_training(param_file, outdir):
         elif algo == "bayes":
             for _, param in param_space.items():
                 if issubclass(type(param), ray.tune.search.sample.Domain):
-                    assert isinstance(param.sampler, ray.tune.search.sample.Float._Uniform), "Bayes only permits `uniform` search spaces"
+                    assert isinstance(
+                        param.sampler, ray.tune.search.sample.Float._Uniform
+                    ), "Bayes only permits `uniform` search spaces"
             algo_obj = BayesOptSearch(random_state=0)
 
         # fit and report best parameter
